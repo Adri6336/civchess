@@ -258,15 +258,26 @@ class GameScene extends Phaser.Scene {
     }
 
     createUIPanel() {
+        const config = layoutConfig;
+
+        if (config.mobile) {
+            this.createMobileUIPanel();
+        } else {
+            this.createDesktopUIPanel();
+        }
+    }
+
+    createDesktopUIPanel() {
         const panelX = BOARD_OFFSET * 2 + BOARD_SIZE * TILE_SIZE;
         const panelWidth = UI_PANEL_WIDTH - 20;
+        const gameHeight = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
 
         // Panel background
         const panelBg = this.add.rectangle(
             panelX + panelWidth / 2,
-            GAME_HEIGHT / 2,
+            gameHeight / 2,
             panelWidth,
-            GAME_HEIGHT - 40,
+            gameHeight - 40,
             COLORS.uiBackground
         );
         panelBg.setStrokeStyle(2, COLORS.border);
@@ -302,7 +313,7 @@ class GameScene extends Phaser.Scene {
         // Player entries with diplomacy buttons
         this.playerEntries = [];
         for (let i = 0; i < 4; i++) {
-            const entry = this.createPlayerEntry(panelX + 10, y, i);
+            const entry = this.createPlayerEntry(panelX + 10, y, i, false);
             this.playerEntries.push(entry);
             y += 45;
         }
@@ -327,7 +338,6 @@ class GameScene extends Phaser.Scene {
         y += 80;
 
         // City production buttons (hidden by default)
-        // Buttons are 110px wide and centered, so offset by 55 to align left edge with panel padding
         this.productionButtons = [];
         const prodTypes = ['DIPLOMACY', 'SCIENCE', 'WARRIOR', 'SETTLER', 'REPAIR'];
         prodTypes.forEach((type, i) => {
@@ -372,30 +382,168 @@ class GameScene extends Phaser.Scene {
         );
     }
 
-    createPlayerEntry(x, y, index) {
-        const container = this.add.container(x, y);
+    createMobileUIPanel() {
+        const boardHeight = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
+        const panelY = boardHeight;
+        const panelWidth = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
+        const panelHeight = UI_PANEL_HEIGHT;
 
-        const colorDot = this.add.circle(10, 10, 8, 0xffffff);
-        const nameText = this.add.text(30, 0, '', {
+        // Panel background
+        const panelBg = this.add.rectangle(
+            panelWidth / 2,
+            panelY + panelHeight / 2,
+            panelWidth,
+            panelHeight,
+            COLORS.uiBackground
+        );
+        panelBg.setStrokeStyle(2, COLORS.border);
+
+        // Mobile layout: Two columns
+        // Left column: Turn info, players
+        // Right column: Selected info, actions, next turn
+
+        const leftColX = 15;
+        const rightColX = panelWidth / 2 + 10;
+        const colWidth = panelWidth / 2 - 25;
+        let leftY = panelY + 15;
+        let rightY = panelY + 15;
+
+        // Left column - Turn and Players
+        this.turnText = this.add.text(leftColX, leftY, 'Turn: Player 1', {
             fontSize: '14px',
+            fontStyle: 'bold',
             color: COLORS.textPrimary
         });
-        const relationText = this.add.text(30, 16, '', {
+        leftY += 22;
+
+        this.techText = this.add.text(leftColX, leftY, 'Tech: 0', {
             fontSize: '12px',
-            color: COLORS.textSecondary
+            color: COLORS.textPrimary
+        });
+        leftY += 25;
+
+        // Compact player entries
+        this.playerEntries = [];
+        for (let i = 0; i < 4; i++) {
+            const entry = this.createPlayerEntry(leftColX, leftY, i, true);
+            this.playerEntries.push(entry);
+            leftY += 32;
+        }
+
+        // Right column - Selected info and actions
+        this.add.text(rightColX, rightY, 'Selected:', {
+            fontSize: '12px',
+            fontStyle: 'bold',
+            color: COLORS.textPrimary
+        });
+        rightY += 18;
+
+        this.selectedInfoText = this.add.text(rightColX, rightY, 'None', {
+            fontSize: '11px',
+            color: COLORS.textSecondary,
+            wordWrap: { width: colWidth - 10 }
+        });
+        rightY += 55;
+
+        // Production buttons in a compact grid (3 columns)
+        this.productionButtons = [];
+        const prodTypes = ['DIPLOMACY', 'SCIENCE', 'WARRIOR', 'SETTLER', 'REPAIR'];
+        const btnWidth = 80;
+        const btnSpacing = 85;
+        prodTypes.forEach((type, i) => {
+            const btn = this.createSmallButton(
+                rightColX + 40 + (i % 3) * btnSpacing,
+                rightY + Math.floor(i / 3) * 28,
+                PRODUCTION_TYPES[type].name.substring(0, 8),
+                () => this.selectProduction(type),
+                btnWidth
+            );
+            btn.setVisible(false);
+            this.productionButtons.push({ btn, type });
         });
 
-        const diplomacyBtn = this.createSmallButton(180, 8, 'War', () => {
-            this.toggleDiplomacy(index);
-        });
-        diplomacyBtn.setVisible(false);
+        // Repeat toggle
+        this.repeatToggle = this.createToggleSwitch(
+            rightColX + 40,
+            rightY + 56,
+            'Repeat',
+            (enabled) => this.toggleRepeat(enabled)
+        );
+        this.repeatToggle.container.setVisible(false);
 
-        container.add([colorDot, nameText, relationText, diplomacyBtn]);
-        container.colorDot = colorDot;
-        container.nameText = nameText;
-        container.relationText = relationText;
-        container.diplomacyBtn = diplomacyBtn;
-        container.playerIndex = index;
+        // Settle button
+        this.settleBtn = this.createSmallButton(
+            rightColX + 40,
+            rightY,
+            'Settle',
+            () => this.settleCity(),
+            btnWidth
+        );
+        this.settleBtn.setVisible(false);
+
+        // Next Turn button at bottom right
+        this.nextTurnBtn = this.createButton(
+            panelWidth - 70,
+            panelY + panelHeight - 30,
+            'Next Turn',
+            () => this.endTurn(),
+            100,
+            35
+        );
+    }
+
+    createPlayerEntry(x, y, index, compact = false) {
+        const container = this.add.container(x, y);
+
+        if (compact) {
+            // Mobile compact layout
+            const colorDot = this.add.circle(6, 8, 5, 0xffffff);
+            const nameText = this.add.text(18, 0, '', {
+                fontSize: '11px',
+                color: COLORS.textPrimary
+            });
+            const relationText = this.add.text(18, 12, '', {
+                fontSize: '10px',
+                color: COLORS.textSecondary
+            });
+
+            const diplomacyBtn = this.createSmallButton(160, 6, 'War', () => {
+                this.toggleDiplomacy(index);
+            }, 55);
+            diplomacyBtn.setVisible(false);
+
+            container.add([colorDot, nameText, relationText, diplomacyBtn]);
+            container.colorDot = colorDot;
+            container.nameText = nameText;
+            container.relationText = relationText;
+            container.diplomacyBtn = diplomacyBtn;
+            container.playerIndex = index;
+            container.compact = true;
+        } else {
+            // Desktop layout
+            const colorDot = this.add.circle(10, 10, 8, 0xffffff);
+            const nameText = this.add.text(30, 0, '', {
+                fontSize: '14px',
+                color: COLORS.textPrimary
+            });
+            const relationText = this.add.text(30, 16, '', {
+                fontSize: '12px',
+                color: COLORS.textSecondary
+            });
+
+            const diplomacyBtn = this.createSmallButton(180, 8, 'War', () => {
+                this.toggleDiplomacy(index);
+            });
+            diplomacyBtn.setVisible(false);
+
+            container.add([colorDot, nameText, relationText, diplomacyBtn]);
+            container.colorDot = colorDot;
+            container.nameText = nameText;
+            container.relationText = relationText;
+            container.diplomacyBtn = diplomacyBtn;
+            container.playerIndex = index;
+            container.compact = false;
+        }
 
         return container;
     }
@@ -425,19 +573,20 @@ class GameScene extends Phaser.Scene {
         return container;
     }
 
-    createSmallButton(x, y, text, callback) {
+    createSmallButton(x, y, text, callback, width = 110) {
         const container = this.add.container(x, y);
 
-        const bg = this.add.rectangle(0, 0, 110, 28, 0x3a3a5a);
+        const bg = this.add.rectangle(0, 0, width, 24, 0x3a3a5a);
         bg.setStrokeStyle(1, 0x5a5a7a);
 
+        const fontSize = width < 80 ? '10px' : '12px';
         const label = this.add.text(0, 0, text, {
-            fontSize: '12px',
+            fontSize: fontSize,
             color: COLORS.textPrimary
         }).setOrigin(0.5);
 
         container.add([bg, label]);
-        container.setSize(110, 28);
+        container.setSize(width, 24);
         container.setInteractive({ useHandCursor: true });
 
         container.on('pointerover', () => bg.setFillStyle(0x4a4a6a));
@@ -527,7 +676,12 @@ class GameScene extends Phaser.Scene {
                 if (i !== this.engine.currentPlayerIndex && cities > 0) {
                     entry.diplomacyBtn.setVisible(true);
                     const relation = currentPlayer.relations[i];
-                    entry.diplomacyBtn.label.setText(relation === 'peace' ? 'Declare War' : 'Propose Peace');
+                    // Use shorter text for compact mobile layout
+                    if (entry.compact) {
+                        entry.diplomacyBtn.label.setText(relation === 'peace' ? 'War' : 'Peace');
+                    } else {
+                        entry.diplomacyBtn.label.setText(relation === 'peace' ? 'Declare War' : 'Propose Peace');
+                    }
                 } else {
                     entry.diplomacyBtn.setVisible(false);
                 }
@@ -847,28 +1001,34 @@ class GameScene extends Phaser.Scene {
 
     showVictoryScreen() {
         const winner = this.engine.players[this.engine.winner];
+        const config = layoutConfig;
+        const centerX = config.gameWidth / 2;
+        const centerY = config.gameHeight / 2;
 
         // Overlay
         const overlay = this.add.rectangle(
-            GAME_WIDTH / 2, GAME_HEIGHT / 2,
-            GAME_WIDTH, GAME_HEIGHT,
+            centerX, centerY,
+            config.gameWidth, config.gameHeight,
             0x000000, 0.8
         );
 
-        // Victory text
-        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50, 'VICTORY!', {
-            fontSize: '48px',
+        // Victory text - smaller on mobile
+        const titleSize = config.mobile ? '36px' : '48px';
+        const subtitleSize = config.mobile ? '24px' : '32px';
+
+        this.add.text(centerX, centerY - 50, 'VICTORY!', {
+            fontSize: titleSize,
             fontStyle: 'bold',
             color: winner.color.css
         }).setOrigin(0.5);
 
-        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20, `${winner.name} wins!`, {
-            fontSize: '32px',
+        this.add.text(centerX, centerY + 20, `${winner.name} wins!`, {
+            fontSize: subtitleSize,
             color: COLORS.textPrimary
         }).setOrigin(0.5);
 
         // Play again button
-        this.createButton(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 100, 'Play Again', () => {
+        this.createButton(centerX, centerY + 100, 'Play Again', () => {
             this.scene.start('MenuScene');
         }, 150, 50);
     }

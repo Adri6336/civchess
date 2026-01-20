@@ -11,63 +11,76 @@ class MenuScene extends Phaser.Scene {
     create() {
         this.cameras.main.setBackgroundColor(COLORS.background);
 
-        const centerX = GAME_WIDTH / 2;
-        let y = 80;
+        const config = layoutConfig;
+        const centerX = config.gameWidth / 2;
+        const mobile = config.mobile;
+
+        // Adjust spacing and font sizes for mobile
+        const titleSize = mobile ? '32px' : '48px';
+        const subtitleSize = mobile ? '14px' : '20px';
+        const labelSize = mobile ? '18px' : '24px';
+        const instructionSize = mobile ? '11px' : '14px';
+        const spacing = mobile ? 0.7 : 1;
+
+        let y = mobile ? 40 : 80;
 
         // Title
         this.add.text(centerX, y, 'CIVCHESS', {
-            fontSize: '48px',
+            fontSize: titleSize,
             fontStyle: 'bold',
             color: COLORS.textPrimary
         }).setOrigin(0.5);
 
-        y += 80;
+        y += 60 * spacing;
 
         // Subtitle
         this.add.text(centerX, y, 'Civilization meets Chess', {
-            fontSize: '20px',
+            fontSize: subtitleSize,
             color: COLORS.textSecondary
         }).setOrigin(0.5);
 
-        y += 80;
+        y += 60 * spacing;
 
         // Player count selection
         this.add.text(centerX, y, 'Number of Players:', {
-            fontSize: '24px',
+            fontSize: labelSize,
             color: COLORS.textPrimary
         }).setOrigin(0.5);
 
-        y += 50;
+        y += 40 * spacing;
 
         // Player count buttons
         this.playerButtons = [];
+        const btnSpacing = mobile ? 60 : 80;
         for (let i = 2; i <= 4; i++) {
-            const btnX = centerX + (i - 3) * 80;
+            const btnX = centerX + (i - 3) * btnSpacing;
             const btn = this.createButton(btnX, y, `${i}`, () => {
                 this.selectedPlayers = i;
                 this.updatePlayerButtons();
-            });
+            }, mobile ? 50 : 60, mobile ? 35 : 40);
             this.playerButtons.push({ btn, value: i });
         }
         this.updatePlayerButtons();
 
-        y += 80;
+        y += 60 * spacing;
 
         // Color selection
         this.add.text(centerX, y, 'Your Color:', {
-            fontSize: '24px',
+            fontSize: labelSize,
             color: COLORS.textPrimary
         }).setOrigin(0.5);
 
-        y += 50;
+        y += 40 * spacing;
 
         // Color swatches
         this.colorSwatches = [];
-        const swatchStartX = centerX - (PLAYER_COLORS.length * 50) / 2 + 25;
+        const swatchSize = mobile ? 16 : 20;
+        const swatchSpacing = mobile ? 40 : 50;
+        const swatchStartX = centerX - (PLAYER_COLORS.length * swatchSpacing) / 2 + swatchSpacing / 2;
 
         PLAYER_COLORS.forEach((color, index) => {
-            const swatchX = swatchStartX + index * 50;
-            const swatch = this.add.circle(swatchX, y, 20, color.hex);
+            const swatchX = swatchStartX + index * swatchSpacing;
+            const swatch = this.add.circle(swatchX, y, swatchSize, color.hex);
             swatch.setStrokeStyle(3, 0x000000);
             swatch.setInteractive({ useHandCursor: true });
             swatch.on('pointerdown', () => {
@@ -78,17 +91,22 @@ class MenuScene extends Phaser.Scene {
         });
         this.updateColorSwatches();
 
-        y += 100;
+        y += 70 * spacing;
 
         // Play button
         this.createButton(centerX, y, 'PLAY', () => {
             this.startGame();
-        }, 150, 50);
+        }, mobile ? 120 : 150, mobile ? 40 : 50);
 
-        y += 80;
+        y += 60 * spacing;
 
-        // Instructions
-        const instructions = [
+        // Instructions - shorter on mobile
+        const instructions = mobile ? [
+            'Cities - Build units & territory',
+            'Warriors - Move 1, attack',
+            'Settlers - Move 3, found cities',
+            'Capture all cities to win!'
+        ] : [
             'Cities (Rooks) - Build units and expand territory',
             'Warriors (Pawns) - Move 1 tile, attack enemies',
             'Settlers (Knights) - Move 3 tiles, found new cities',
@@ -96,9 +114,10 @@ class MenuScene extends Phaser.Scene {
             'First to capture all cities wins!'
         ];
 
+        const lineSpacing = mobile ? 18 : 25;
         instructions.forEach((text, i) => {
-            this.add.text(centerX, y + i * 25, text, {
-                fontSize: '14px',
+            this.add.text(centerX, y + i * lineSpacing, text, {
+                fontSize: instructionSize,
                 color: COLORS.textSecondary
             }).setOrigin(0.5);
         });
@@ -110,8 +129,9 @@ class MenuScene extends Phaser.Scene {
         const bg = this.add.rectangle(0, 0, width, height, 0x4a4a6a);
         bg.setStrokeStyle(2, 0x6a6a8a);
 
+        const fontSize = width < 80 ? '16px' : '20px';
         const label = this.add.text(0, 0, text, {
-            fontSize: '20px',
+            fontSize: fontSize,
             color: COLORS.textPrimary
         }).setOrigin(0.5);
 
@@ -123,16 +143,16 @@ class MenuScene extends Phaser.Scene {
         container.on('pointerout', () => bg.setFillStyle(0x4a4a6a));
         container.on('pointerdown', callback);
 
+        container.bg = bg;
         return container;
     }
 
     updatePlayerButtons() {
         this.playerButtons.forEach(({ btn, value }) => {
-            const bg = btn.list[0];
             if (value === this.selectedPlayers) {
-                bg.setFillStyle(0x00aa00);
+                btn.bg.setFillStyle(0x00aa00);
             } else {
-                bg.setFillStyle(0x4a4a6a);
+                btn.bg.setFillStyle(0x4a4a6a);
             }
         });
     }

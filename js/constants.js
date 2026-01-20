@@ -5,8 +5,53 @@ const BOARD_SIZE = 10;
 const TILE_SIZE = 60;
 const BOARD_OFFSET = 40;
 const UI_PANEL_WIDTH = 280;
-const GAME_WIDTH = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2 + UI_PANEL_WIDTH;
-const GAME_HEIGHT = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
+const UI_PANEL_HEIGHT = 320;
+
+// Responsive layout detection
+const Layout = {
+    isMobile: function() {
+        return window.innerWidth <= 768 || (window.innerWidth < window.innerHeight && window.innerWidth <= 1024);
+    },
+
+    getConfig: function() {
+        const mobile = this.isMobile();
+        const boardWidth = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
+        const boardHeight = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
+
+        if (mobile) {
+            // Mobile: board on top, panel below
+            return {
+                mobile: true,
+                gameWidth: boardWidth,
+                gameHeight: boardHeight + UI_PANEL_HEIGHT,
+                boardOffsetX: BOARD_OFFSET,
+                boardOffsetY: BOARD_OFFSET,
+                panelX: 0,
+                panelY: boardHeight,
+                panelWidth: boardWidth,
+                panelHeight: UI_PANEL_HEIGHT
+            };
+        } else {
+            // Desktop: panel on right side
+            return {
+                mobile: false,
+                gameWidth: boardWidth + UI_PANEL_WIDTH,
+                gameHeight: boardHeight,
+                boardOffsetX: BOARD_OFFSET,
+                boardOffsetY: BOARD_OFFSET,
+                panelX: boardWidth,
+                panelY: 0,
+                panelWidth: UI_PANEL_WIDTH,
+                panelHeight: boardHeight
+            };
+        }
+    }
+};
+
+// Initial layout config (will be updated on resize)
+let layoutConfig = Layout.getConfig();
+const GAME_WIDTH = layoutConfig.gameWidth;
+const GAME_HEIGHT = layoutConfig.gameHeight;
 
 // Neon colors for players
 const PLAYER_COLORS = [
