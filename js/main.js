@@ -8,13 +8,12 @@ const config = {
     parent: 'game-container',
     backgroundColor: COLORS.background,
     scene: [MenuScene, GameScene],
+    render: {
+        roundPixels: true
+    },
     scale: {
-        mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
-        min: {
-            width: 320,
-            height: 480
-        }
+        mode: Phaser.Scale.NONE,
+        autoCenter: Phaser.Scale.CENTER_BOTH
     },
     input: {
         activePointers: 3 // Support multi-touch
@@ -24,18 +23,22 @@ const config = {
 // Create game instance
 const game = new Phaser.Game(config);
 
-// Handle orientation/resize changes
+// Handle orientation/resize changes - recompose instead of scale
+let resizeTimeout;
 window.addEventListener('resize', () => {
-    const newConfig = Layout.getConfig();
-    const oldMobile = layoutConfig.mobile;
-    layoutConfig = newConfig;
+    // Debounce resize events
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+        const newConfig = Layout.calculate();
+        layoutConfig = newConfig;
 
-    // If layout mode changed, restart the current scene
-    if (oldMobile !== newConfig.mobile && game.scene.scenes.length > 0) {
+        // Resize the canvas to new dimensions
+        game.scale.resize(newConfig.gameWidth, newConfig.gameHeight);
+
+        // Restart the active scene to recompose with new tile size
         const activeScene = game.scene.getScenes(true)[0];
         if (activeScene) {
-            game.scale.resize(newConfig.gameWidth, newConfig.gameHeight);
             activeScene.scene.restart();
         }
-    }
+    }, 150);
 });

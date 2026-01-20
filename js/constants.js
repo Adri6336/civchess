@@ -2,37 +2,75 @@
 // CONSTANTS
 // ============================================
 const BOARD_SIZE = 10;
-const TILE_SIZE = 60;
-const BOARD_OFFSET = 40;
+const BASE_TILE_SIZE = 60;
+const BASE_BOARD_OFFSET = 40;
 const UI_PANEL_WIDTH = 280;
 const UI_PANEL_HEIGHT = 320;
 
-// Responsive layout detection
+// Dynamic values (recalculated based on viewport)
+let TILE_SIZE = BASE_TILE_SIZE;
+let BOARD_OFFSET = BASE_BOARD_OFFSET;
+
+// Responsive layout detection and calculation
 const Layout = {
     isMobile: function() {
         return window.innerWidth <= 768 || (window.innerWidth < window.innerHeight && window.innerWidth <= 1024);
     },
 
-    getConfig: function() {
+    calculate: function() {
         const mobile = this.isMobile();
+
+        // Get available viewport space (with some padding for page elements)
+        const availableWidth = window.innerWidth - 24;
+        const availableHeight = window.innerHeight - 90;
+
+        // Base dimensions at full size
+        const baseBoardSize = BOARD_SIZE * BASE_TILE_SIZE + BASE_BOARD_OFFSET * 2;
+
+        let targetWidth, targetHeight;
+        if (mobile) {
+            targetWidth = baseBoardSize;
+            targetHeight = baseBoardSize + UI_PANEL_HEIGHT;
+        } else {
+            targetWidth = baseBoardSize + UI_PANEL_WIDTH;
+            targetHeight = baseBoardSize;
+        }
+
+        // Calculate scale to fit viewport (never scale up beyond 1)
+        const scale = Math.min(
+            availableWidth / targetWidth,
+            availableHeight / targetHeight,
+            1
+        );
+
+        // Apply scale to dynamic values
+        TILE_SIZE = Math.floor(BASE_TILE_SIZE * scale);
+        BOARD_OFFSET = Math.floor(BASE_BOARD_OFFSET * scale);
+
+        // Ensure minimum usable sizes
+        TILE_SIZE = Math.max(TILE_SIZE, 35);
+        BOARD_OFFSET = Math.max(BOARD_OFFSET, 20);
+
+        // Calculate final dimensions
         const boardWidth = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
         const boardHeight = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
 
+        // Scale panel height on mobile for better proportions
+        const scaledPanelHeight = mobile ? Math.max(Math.floor(UI_PANEL_HEIGHT * scale), 180) : UI_PANEL_HEIGHT;
+
         if (mobile) {
-            // Mobile: board on top, panel below
             return {
                 mobile: true,
                 gameWidth: boardWidth,
-                gameHeight: boardHeight + UI_PANEL_HEIGHT,
+                gameHeight: boardHeight + scaledPanelHeight,
                 boardOffsetX: BOARD_OFFSET,
                 boardOffsetY: BOARD_OFFSET,
                 panelX: 0,
                 panelY: boardHeight,
                 panelWidth: boardWidth,
-                panelHeight: UI_PANEL_HEIGHT
+                panelHeight: scaledPanelHeight
             };
         } else {
-            // Desktop: panel on right side
             return {
                 mobile: false,
                 gameWidth: boardWidth + UI_PANEL_WIDTH,
@@ -45,11 +83,15 @@ const Layout = {
                 panelHeight: boardHeight
             };
         }
+    },
+
+    getConfig: function() {
+        return this.calculate();
     }
 };
 
-// Initial layout config (will be updated on resize)
-let layoutConfig = Layout.getConfig();
+// Initial layout calculation
+let layoutConfig = Layout.calculate();
 const GAME_WIDTH = layoutConfig.gameWidth;
 const GAME_HEIGHT = layoutConfig.gameHeight;
 

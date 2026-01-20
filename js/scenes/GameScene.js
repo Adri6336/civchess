@@ -386,7 +386,7 @@ class GameScene extends Phaser.Scene {
         const boardHeight = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
         const panelY = boardHeight;
         const panelWidth = BOARD_SIZE * TILE_SIZE + BOARD_OFFSET * 2;
-        const panelHeight = UI_PANEL_HEIGHT;
+        const panelHeight = layoutConfig.panelHeight;
 
         // Panel background
         const panelBg = this.add.rectangle(
