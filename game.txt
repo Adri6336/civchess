@@ -1,0 +1,61 @@
+This conversion should keep the basic design of the chess game and keep using phaser js.
+
+1. Create a game engine to track rules and actions. It should hold a given game state and provide functions to interact with the board in various ways according to the needs of the game. If a request violates the game rules, it should be denied by the engine. All actions, acceptances and denials, should be logged.
+
+2. There should be a simple menu screen with options to set and a play button. The only options right now should be how many players, 2 - 4, and what color you want.
+
+3. All players should be assigned a neon color. When the game starts, they are randomly placed on one end of a 10x10 board of squares.
+
+4. Code for AI control of players should be prepped, but no AI should be developed yet. All turns should be done by a human for now.
+
+5. The code should be structured in a way that is easy to update.
+
+# Game
+
+CIVCHESS
+
+CivChess is a game that seeks to mix aspects of civilization games in the form factor of chess games. Players start of with pieces representative of things like cities and warriors, and grow the cities with selections of productivity. All players should have a binary state of peace and war with each other.
+
+# The Board
+
+The game takes place on a 10 x 10 grid. Every tile can be owned by other players. When a tile is owned by another player (e.g. p1), no players at peace with this player can move onto it (if p1 owns a tile, then all players at peace with p1 cannot move on it). Tile ownership is represented by a curved square with low opacity over it, almost like a neon field, where the color is the player's color.
+
+If a city is over an owned tile, the city becomes owned by the owner of the tile.
+
+# Pieces
+There are three pieces: Cities (represented by rooks), warriors (represented by pawns), and settlers (represented by knights). 
+
+Cities: these are immovable pieces. When a player with an active turn selects one, they can choose between: diplomacy, science, make warrior, make settler.
+
+Production Types:
+	Diplomacy: 4 turns to complete. When completed, 1 random tile at the boundary of the border becomes owned. If the tile is already owned, a different tile will be selected for acquisition. If no unowned tiles exist, take the owned tile.
+	Science: 10 turns to complete. When completed, tech score goes up by 1. This gives a 1 hp boost to all cities and warriors, and warriors can do 1+ points of damage.
+	Make warrior: 4 turns to complete. When completed, a warrior spawns outside of the city where the production was made (1 tile out, including diagonals). If there are no good tiles, an red exclamation should appear over the city and the project pauses for 1 turn (does not lose progress).
+	Make settler: 6 turns to complete. When completed, a settler will spawn using the same placement method as the warrior.
+	Repair: 1 turn to complete. Add 1 hp to a city unless at max hp.
+
+Behaviors:
+
+Cities are immovable. See the city piece for details on function.
+
+Warriors can move 1 tile (diagonal inclusive) per turn. A warrior cannot move onto an owned tile unless war has been declared against the owner. When a warrior moves onto an owned tile, they flip ownership to the owner of the warrior. When a warrior tries to move onto a piece, the warror uses its damage points to hurt the piece. If a warrior reduces a city's hp to zero or lower, the city flips ownership to warrior's owner and regains rounded up 1/3 hp points. If a warrior reduces the hp of a settler or warrior to 0 or below, that piece is removed from the game.
+
+Settlers can move 3 tiles up, down, left, and right (diagonal excluded). They start with 1 hp and cannot do damage. They have the ability to turn into a city if allowed on a given tile (tile is owned and at least 2 tiles away from another city, diagonal inclusive).
+
+Cities cannot move. When selected, their options are projects. They start with 4 hp and cannot do damage to other pieces.
+
+
+# Turns
+
+Players can press "next turn" to give the next player the ability to act. While another player's turn is active, they are the only one who can act.
+
+
+# Design
+
+The board should be on the left of the page during an active game. The right should show info about the game, the other 4 players and your relation to them (war or peace) and a button that flips between "Declare War" and "Propose Peace" depending on relationship, and controls for a selected unit under that.
+
+All pieces with full health should not have a health bar. If the piece does not have full health, the health bar should appear on top of the piece as a transparent curved rectangle, showing the health as a colored bar that gets lower as they lose more (shows health as a percentage in the form of a fill bar).
+
+Pieces can be dragged and dropped over a tile to move them, or they can be selected then have a tile selected to move them to that tile. If a piece is selected or help, a transparent green border should appear on the board showing the player which moves are legal and stay until the piece is dropped or a tile is selected. If a piece is dropped over an invalid spot, it should flow back to its orginal spot without using its moves. If a piece is moved over another piece, it will be considered invalid unless the piece is a warrior and the payer is at war with the owner of the piece they are moving over. If a warrior moves onto a piece whom they are at war with, they damage the piece.
+
+First player to own all cities wins. When a player loses all their cities, the conquerer keeps 1/6th of the conqured player's warriors; all other pieces except cities are removed from play.
