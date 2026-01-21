@@ -357,13 +357,15 @@ class GameEngine {
     }
 
     resolveCombat(attacker, defender) {
+        const originalOwnerId = defender.ownerId;
         const result = {
             attacker: attacker.id,
             defender: defender.id,
             damageDealt: attacker.damage,
             defenderDestroyed: false,
             cityFlipped: false,
-            attackerSurvived: true
+            attackerSurvived: true,
+            elimination: null
         };
 
         defender.hp -= attacker.damage;
@@ -383,7 +385,7 @@ class GameEngine {
                 this.log('CITY_CAPTURED', { city: defender.id, newOwner: attacker.ownerId });
 
                 // Check for player elimination
-                this.checkPlayerElimination(defender.ownerId);
+                result.elimination = this.checkPlayerElimination(originalOwnerId);
             } else {
                 // Remove the piece
                 this.removePiece(defender);
@@ -412,27 +414,65 @@ class GameEngine {
         if (playerCities.length === 0) {
             // Player is eliminated
             const conquerer = this.currentPlayerIndex;
+
+            // Get warriors and settlers separately
             const playerWarriors = this.pieces.filter(p =>
-                p.type === PIECE_TYPES.WARRIOR && p.ownerId === playerId
+                p.ownerId === playerId && p.type === PIECE_TYPES.WARRIOR
+            );
+            const playerSettlers = this.pieces.filter(p =>
+                p.ownerId === playerId && p.type === PIECE_TYPES.SETTLER
             );
 
-            // Conquerer keeps 1/6th of warriors
-            const warriorsToKeep = Math.floor(playerWarriors.length / 6);
-            let kept = 0;
+            // 25% of warriors are converted, at least 1 if any warriors exist
+            const warriorsToConvert = playerWarriors.length > 0
+                ? Math.max(1, Math.floor(playerWarriors.length * 0.25))
+                : 0;
 
-            this.pieces.forEach(p => {
-                if (p.ownerId === playerId) {
-                    if (p.type === PIECE_TYPES.WARRIOR && kept < warriorsToKeep) {
-                        p.ownerId = conquerer;
-                        kept++;
-                    } else if (p.type !== PIECE_TYPES.CITY) {
-                        this.removePiece(p);
-                    }
+            // Shuffle warriors to randomly select which ones to convert
+            const shuffledWarriors = [...playerWarriors].sort(() => Math.random() - 0.5);
+
+            const convertedUnits = [];
+            const destroyedUnits = [];
+
+            // Process warriors: convert 25%, destroy 75%
+            shuffledWarriors.forEach((warrior, index) => {
+                if (index < warriorsToConvert) {
+                    // Convert this warrior: destroy it and create a new warrior for conqueror
+                    const row = warrior.row;
+                    const col = warrior.col;
+                    this.removePiece(warrior);
+
+                    // Create new warrior for conqueror at same position
+                    const newWarrior = this.createPiece(PIECE_TYPES.WARRIOR, conquerer, row, col);
+                    this.pieces.push(newWarrior);
+                    this.board[row][col] = newWarrior;
+
+                    convertedUnits.push({ oldUnit: warrior, newWarrior: newWarrior });
+                } else {
+                    // Destroy this warrior
+                    this.removePiece(warrior);
+                    destroyedUnits.push(warrior);
                 }
             });
 
+            // Destroy all settlers
+            playerSettlers.forEach(settler => {
+                this.removePiece(settler);
+                destroyedUnits.push(settler);
+            });
+
             this.log('PLAYER_ELIMINATED', { player: playerId, conquerer: conquerer });
+
+            return {
+                eliminated: true,
+                playerId: playerId,
+                conquerer: conquerer,
+                convertedUnits: convertedUnits,
+                destroyedUnits: destroyedUnits
+            };
         }
+
+        return { eliminated: false };
     }
 
     checkVictory() {

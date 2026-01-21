@@ -309,6 +309,51 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    handleEliminationAnimation(elimination) {
+        // Animate destruction of 75% of units
+        for (const unit of elimination.destroyedUnits) {
+            this.removePieceSprite(unit.id);
+        }
+
+        // Animate conversion of 25% of units (destroy old, create new warrior for conqueror)
+        for (const conversion of elimination.convertedUnits) {
+            const oldSprite = this.pieceSprites.get(conversion.oldUnit.id);
+            if (oldSprite) {
+                // Get position before destroying
+                const x = oldSprite.x;
+                const y = oldSprite.y;
+
+                // Destroy old sprite with animation
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 100 + Math.random() * 100;
+                const targetX = x + Math.cos(angle) * distance;
+                const targetY = y + Math.sin(angle) * distance + 200;
+                const rotation = (Math.random() - 0.5) * Math.PI * 4;
+
+                this.tweens.add({
+                    targets: oldSprite,
+                    x: targetX,
+                    y: targetY,
+                    alpha: 0,
+                    scale: 0.2,
+                    rotation: rotation,
+                    duration: 1500,
+                    ease: 'Quad.easeOut',
+                    onComplete: () => {
+                        oldSprite.destroy();
+                        this.pieceSprites.delete(conversion.oldUnit.id);
+                    }
+                });
+            }
+
+            // Create new warrior sprite for conqueror (slight delay for visual effect)
+            this.time.delayedCall(300, () => {
+                this.createPieceSprite(conversion.newWarrior);
+                this.drawOwnership();
+            });
+        }
+    }
+
     createUIPanel() {
         const config = layoutConfig;
 
@@ -1043,6 +1088,11 @@ class GameScene extends Phaser.Scene {
                             // Create new sprite for the captured city (now owned by attacker)
                             this.createPieceSprite(defenderPiece);
                             this.drawOwnership();
+
+                            // Handle player elimination if it occurred
+                            if (result.combat.elimination && result.combat.elimination.eliminated) {
+                                this.handleEliminationAnimation(result.combat.elimination);
+                            }
                         } else if (defenderPiece) {
                             this.updatePieceSprite(defenderPiece);
                         }
