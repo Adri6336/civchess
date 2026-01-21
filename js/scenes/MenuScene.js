@@ -9,6 +9,7 @@ class MenuScene extends Phaser.Scene {
         this.showingMainMenu = true;
         this.mainMenuElements = [];
         this.newGameElements = [];
+        this.loadGameElements = [];
     }
 
     create() {
@@ -18,8 +19,11 @@ class MenuScene extends Phaser.Scene {
 
     showMainMenu() {
         this.showingMainMenu = true;
+        this.cleanupScrolling();
         this.clearElements(this.newGameElements);
         this.newGameElements = [];
+        this.clearElements(this.loadGameElements);
+        this.loadGameElements = [];
 
         const config = layoutConfig;
         const centerX = config.gameWidth / 2;
@@ -74,6 +78,22 @@ class MenuScene extends Phaser.Scene {
             continueBtn.disableInteractive();
         }
         this.mainMenuElements.push(continueBtn);
+
+        y += 70 * spacing;
+
+        // Load Game button
+        const loadGameBtn = this.createButton(centerX, y, 'Load Game', () => {
+            this.showLoadGameMenu();
+        }, mobile ? 180 : 200, mobile ? 45 : 55);
+
+        // Disable if no saved games
+        if (savedGames.length === 0) {
+            loadGameBtn.bg.setFillStyle(0x2a2a3a);
+            loadGameBtn.bg.setAlpha(0.5);
+            loadGameBtn.label.setAlpha(0.5);
+            loadGameBtn.disableInteractive();
+        }
+        this.mainMenuElements.push(loadGameBtn);
 
         y += 100 * spacing;
 
@@ -222,6 +242,334 @@ class MenuScene extends Phaser.Scene {
             }).setOrigin(0.5);
             this.newGameElements.push(instr);
         });
+    }
+
+    showLoadGameMenu() {
+        this.showingMainMenu = false;
+        this.clearElements(this.mainMenuElements);
+        this.mainMenuElements = [];
+
+        const config = layoutConfig;
+        const centerX = config.gameWidth / 2;
+        const mobile = config.mobile;
+
+        const titleSize = mobile ? '32px' : '48px';
+        const spacing = mobile ? 0.7 : 1;
+
+        let y = mobile ? 40 : 80;
+
+        // Title
+        const title = this.add.text(centerX, y, 'LOAD GAME', {
+            fontSize: titleSize,
+            fontStyle: 'bold',
+            color: COLORS.textPrimary
+        }).setOrigin(0.5);
+        this.loadGameElements.push(title);
+
+        y += 60 * spacing;
+
+        // Back button
+        const backBtn = this.createButton(mobile ? 50 : 80, y - 30, '\u2190 Back', () => {
+            this.cleanupScrolling();
+            this.showMainMenu();
+        }, mobile ? 80 : 100, mobile ? 30 : 35);
+        this.loadGameElements.push(backBtn);
+
+        y += 30 * spacing;
+
+        // Get saved games (already sorted by most recent first in GameHistory)
+        const savedGames = GameHistory.listSavedGames();
+
+        if (savedGames.length === 0) {
+            const noGames = this.add.text(centerX, y + 50, 'No saved games found', {
+                fontSize: mobile ? '16px' : '20px',
+                color: COLORS.textSecondary
+            }).setOrigin(0.5);
+            this.loadGameElements.push(noGames);
+            return;
+        }
+
+        // Create scrollable game list
+        const listStartY = y;
+        const rowHeight = mobile ? 50 : 60;
+        const listWidth = mobile ? config.gameWidth - 40 : config.gameWidth - 80;
+        const maxVisibleRows = mobile ? 5 : 6;
+        const visibleHeight = maxVisibleRows * rowHeight;
+        const totalHeight = savedGames.length * rowHeight;
+
+        // Create a container for all game entries
+        this.scrollContainer = this.add.container(0, 0);
+        this.loadGameElements.push(this.scrollContainer);
+
+        // Track scroll position
+        this.scrollY = 0;
+        this.maxScrollY = Math.max(0, totalHeight - visibleHeight);
+        this.listStartY = listStartY;
+        this.visibleHeight = visibleHeight;
+
+        savedGames.forEach((game, index) => {
+            const rowY = listStartY + index * rowHeight;
+
+            // Row background
+            const rowBg = this.add.rectangle(centerX, rowY, listWidth, rowHeight - 5, 0x3a3a5a);
+            rowBg.setStrokeStyle(1, 0x5a5a7a);
+            rowBg.setInteractive({ useHandCursor: true });
+            this.scrollContainer.add(rowBg);
+
+            // Game name
+            const nameX = centerX - listWidth / 2 + 15;
+            const nameText = this.add.text(nameX, rowY - 8, game.gameId, {
+                fontSize: mobile ? '14px' : '16px',
+                fontStyle: 'bold',
+                color: COLORS.textPrimary
+            }).setOrigin(0, 0.5);
+            this.scrollContainer.add(nameText);
+
+            // Game info (players, status, datetime)
+            const dateStr = game.startTime ? this.formatDateTime(new Date(game.startTime)) : 'Unknown';
+            const status = game.winner !== null ? 'Finished' : 'In Progress';
+            const infoText = this.add.text(nameX, rowY + 10, `${game.playerCount} players | ${status} | ${dateStr}`, {
+                fontSize: mobile ? '10px' : '12px',
+                color: COLORS.textSecondary
+            }).setOrigin(0, 0.5);
+            this.scrollContainer.add(infoText);
+
+            // Button dimensions
+            const btnWidth = mobile ? 55 : 70;
+            const btnHeight = mobile ? 28 : 32;
+            const btnSpacing = mobile ? 60 : 80;
+
+            // Delete button (neon red) - rightmost
+            const deleteX = centerX + listWidth / 2 - btnWidth / 2 - 10;
+            const deleteBtn = this.createColoredButton(deleteX, rowY, 'Delete', 0xff0044, () => {
+                this.deleteGame(game.gameId);
+            }, btnWidth, btnHeight);
+            this.scrollContainer.add(deleteBtn);
+
+            // Rename button (neon green)
+            const renameX = deleteX - btnSpacing;
+            const renameBtn = this.createColoredButton(renameX, rowY, 'Rename', 0x00ff44, () => {
+                this.showRenameDialog(game.gameId);
+            }, btnWidth, btnHeight);
+            this.scrollContainer.add(renameBtn);
+
+            // Click on row to load game (but not on buttons)
+            rowBg.on('pointerdown', (pointer) => {
+                // Check if click is not on the buttons area
+                const btnAreaStart = renameX - btnWidth / 2 - 5;
+                if (pointer.x < btnAreaStart) {
+                    this.loadGame(game.gameId);
+                }
+            });
+
+            rowBg.on('pointerover', () => {
+                rowBg.setFillStyle(0x4a4a6a);
+            });
+            rowBg.on('pointerout', () => {
+                rowBg.setFillStyle(0x3a3a5a);
+            });
+        });
+
+        // Create mask for scrolling (only if content exceeds visible area)
+        if (totalHeight > visibleHeight) {
+            const maskShape = this.make.graphics();
+            maskShape.fillStyle(0xffffff);
+            maskShape.fillRect(0, listStartY - rowHeight / 2, config.gameWidth, visibleHeight + rowHeight / 2);
+            const mask = maskShape.createGeometryMask();
+            this.scrollContainer.setMask(mask);
+            this.scrollMaskGraphics = maskShape;
+
+            // Add scroll indicator
+            this.createScrollIndicator(config.gameWidth - 20, listStartY, visibleHeight, totalHeight);
+
+            // Setup mouse wheel scrolling
+            this.setupScrolling();
+        }
+    }
+
+    /**
+     * Format a date as datetime string (e.g., "Jan 21, 2026 3:45 PM")
+     */
+    formatDateTime(date) {
+        const options = {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        };
+        return date.toLocaleString(undefined, options);
+    }
+
+    /**
+     * Create a scroll indicator bar
+     */
+    createScrollIndicator(x, y, visibleHeight, totalHeight) {
+        const trackHeight = visibleHeight - 20;
+        const thumbHeight = Math.max(30, (visibleHeight / totalHeight) * trackHeight);
+
+        // Track background
+        this.scrollTrack = this.add.rectangle(x, y + trackHeight / 2, 6, trackHeight, 0x2a2a3a);
+        this.scrollTrack.setStrokeStyle(1, 0x4a4a6a);
+        this.loadGameElements.push(this.scrollTrack);
+
+        // Thumb
+        this.scrollThumb = this.add.rectangle(x, y + thumbHeight / 2, 6, thumbHeight, 0x6a6a8a);
+        this.loadGameElements.push(this.scrollThumb);
+
+        this.scrollTrackY = y;
+        this.scrollTrackHeight = trackHeight;
+        this.scrollThumbHeight = thumbHeight;
+    }
+
+    /**
+     * Update scroll indicator position
+     */
+    updateScrollIndicator() {
+        if (this.scrollThumb && this.maxScrollY > 0) {
+            const scrollPercent = this.scrollY / this.maxScrollY;
+            const thumbTravel = this.scrollTrackHeight - this.scrollThumbHeight;
+            this.scrollThumb.y = this.scrollTrackY + this.scrollThumbHeight / 2 + (scrollPercent * thumbTravel);
+        }
+    }
+
+    /**
+     * Setup mouse wheel and touch scrolling
+     */
+    setupScrolling() {
+        // Mouse wheel scrolling
+        this.scrollHandler = (pointer, gameObjects, deltaX, deltaY) => {
+            if (this.scrollContainer && this.maxScrollY > 0) {
+                this.scrollY = Phaser.Math.Clamp(this.scrollY + deltaY * 0.5, 0, this.maxScrollY);
+                this.scrollContainer.y = -this.scrollY;
+                this.updateScrollIndicator();
+            }
+        };
+        this.input.on('wheel', this.scrollHandler);
+
+        // Touch drag scrolling for mobile
+        this.isDragging = false;
+        this.lastPointerY = 0;
+
+        this.pointerDownHandler = (pointer) => {
+            if (pointer.y >= this.listStartY && pointer.y <= this.listStartY + this.visibleHeight) {
+                this.isDragging = true;
+                this.lastPointerY = pointer.y;
+            }
+        };
+
+        this.pointerMoveHandler = (pointer) => {
+            if (this.isDragging && this.scrollContainer && this.maxScrollY > 0) {
+                const deltaY = this.lastPointerY - pointer.y;
+                this.scrollY = Phaser.Math.Clamp(this.scrollY + deltaY, 0, this.maxScrollY);
+                this.scrollContainer.y = -this.scrollY;
+                this.lastPointerY = pointer.y;
+                this.updateScrollIndicator();
+            }
+        };
+
+        this.pointerUpHandler = () => {
+            this.isDragging = false;
+        };
+
+        this.input.on('pointerdown', this.pointerDownHandler);
+        this.input.on('pointermove', this.pointerMoveHandler);
+        this.input.on('pointerup', this.pointerUpHandler);
+    }
+
+    /**
+     * Cleanup scrolling event handlers
+     */
+    cleanupScrolling() {
+        if (this.scrollHandler) {
+            this.input.off('wheel', this.scrollHandler);
+            this.scrollHandler = null;
+        }
+        if (this.pointerDownHandler) {
+            this.input.off('pointerdown', this.pointerDownHandler);
+            this.pointerDownHandler = null;
+        }
+        if (this.pointerMoveHandler) {
+            this.input.off('pointermove', this.pointerMoveHandler);
+            this.pointerMoveHandler = null;
+        }
+        if (this.pointerUpHandler) {
+            this.input.off('pointerup', this.pointerUpHandler);
+            this.pointerUpHandler = null;
+        }
+        if (this.scrollMaskGraphics) {
+            this.scrollMaskGraphics.destroy();
+            this.scrollMaskGraphics = null;
+        }
+        this.scrollContainer = null;
+        this.scrollThumb = null;
+        this.scrollTrack = null;
+    }
+
+    createColoredButton(x, y, text, color, callback, width = 70, height = 32) {
+        const container = this.add.container(x, y);
+
+        const bg = this.add.rectangle(0, 0, width, height, color);
+        bg.setStrokeStyle(2, 0xffffff);
+
+        const label = this.add.text(0, 0, text, {
+            fontSize: '14px',
+            fontStyle: 'bold',
+            color: '#000000'
+        }).setOrigin(0.5);
+
+        container.add([bg, label]);
+        container.setSize(width, height);
+        container.setInteractive({ useHandCursor: true });
+
+        container.on('pointerover', () => {
+            bg.setAlpha(0.8);
+        });
+        container.on('pointerout', () => {
+            bg.setAlpha(1);
+        });
+        container.on('pointerdown', callback);
+
+        container.bg = bg;
+        container.label = label;
+        return container;
+    }
+
+    loadGame(gameId) {
+        // Update timestamp to make it most recent
+        GameHistory.updateTimestamp(gameId);
+
+        const savedGame = GameHistory.loadFromLocalStorage(gameId);
+        if (savedGame) {
+            this.cleanupScrolling();
+            this.scene.start('GameScene', { savedGame: savedGame });
+        }
+    }
+
+    deleteGame(gameId) {
+        GameHistory.deleteSavedGame(gameId);
+        // Refresh the load game menu
+        this.cleanupScrolling();
+        this.clearElements(this.loadGameElements);
+        this.loadGameElements = [];
+        this.showLoadGameMenu();
+    }
+
+    showRenameDialog(gameId) {
+        const newName = prompt('Enter new name for the save:', gameId);
+        if (newName && newName.trim() && newName !== gameId) {
+            const success = GameHistory.renameSavedGame(gameId, newName.trim());
+            if (success) {
+                // Refresh the load game menu
+                this.cleanupScrolling();
+                this.clearElements(this.loadGameElements);
+                this.loadGameElements = [];
+                this.showLoadGameMenu();
+            } else {
+                alert('Failed to rename. A save with that name may already exist.');
+            }
+        }
     }
 
     clearElements(elements) {
