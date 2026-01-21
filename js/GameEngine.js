@@ -15,6 +15,8 @@ class GameEngine {
         this.actionLog = [];
         this.gameOver = false;
         this.winner = null;
+        this.turnNumber = 0;
+        this.history = new GameHistory();
     }
 
     createEmptyBoard() {
@@ -62,6 +64,11 @@ class GameEngine {
         this.placeStartingPieces();
 
         this.log('GAME_START', { players: this.players.length });
+
+        // Initialize history tracking
+        this.history.initGame(this.players);
+        this.history.captureSnapshot(this, 'GAME_START', { players: this.players.length });
+
         return true;
     }
 
@@ -349,6 +356,13 @@ class GameEngine {
 
         this.log('MOVE', { piece: piece.id, to: { row: targetRow, col: targetCol } });
 
+        // Capture history snapshot after move
+        this.history.captureSnapshot(this, 'MOVE', {
+            piece: piece.id,
+            to: { row: targetRow, col: targetCol },
+            combat: combatResult
+        });
+
         const result = { success: true };
         if (combatResult) {
             result.combat = combatResult;
@@ -383,6 +397,13 @@ class GameEngine {
                 result.defenderDestroyed = false;
                 this.tileOwnership[defender.row][defender.col] = attacker.ownerId;
                 this.log('CITY_CAPTURED', { city: defender.id, newOwner: attacker.ownerId });
+
+                // Capture history snapshot for city capture
+                this.history.captureSnapshot(this, 'CITY_CAPTURED', {
+                    city: defender.id,
+                    newOwner: attacker.ownerId,
+                    previousOwner: originalOwnerId
+                });
 
                 // Check for player elimination
                 result.elimination = this.checkPlayerElimination(originalOwnerId);
@@ -463,6 +484,14 @@ class GameEngine {
 
             this.log('PLAYER_ELIMINATED', { player: playerId, conquerer: conquerer });
 
+            // Capture history snapshot for player elimination
+            this.history.captureSnapshot(this, 'PLAYER_ELIMINATED', {
+                player: playerId,
+                conquerer: conquerer,
+                convertedUnits: convertedUnits.length,
+                destroyedUnits: destroyedUnits.length
+            });
+
             return {
                 eliminated: true,
                 playerId: playerId,
@@ -486,6 +515,10 @@ class GameEngine {
             this.gameOver = true;
             this.winner = [...cityOwners][0];
             this.log('VICTORY', { winner: this.winner });
+
+            // Capture final history snapshot and mark game as ended
+            this.history.captureSnapshot(this, 'VICTORY', { winner: this.winner });
+            this.history.endGame(this.winner);
         }
     }
 
@@ -504,6 +537,14 @@ class GameEngine {
         city.productionProgress = 0;
         city.productionPaused = false;
         this.log('PRODUCTION_SET', { city: city.id, production: productionType });
+
+        // Capture history snapshot for production set
+        this.history.captureSnapshot(this, 'PRODUCTION_SET', {
+            city: city.id,
+            production: productionType,
+            owner: city.ownerId
+        });
+
         return true;
     }
 
@@ -549,6 +590,14 @@ class GameEngine {
         this.tileOwnership[settler.row][settler.col] = settler.ownerId;
 
         this.log('CITY_BUILT', { city: city.id, location: { row: settler.row, col: settler.col } });
+
+        // Capture history snapshot for city built
+        this.history.captureSnapshot(this, 'CITY_BUILT', {
+            city: city.id,
+            location: { row: settler.row, col: settler.col },
+            owner: settler.ownerId
+        });
+
         return { success: true, city: city };
     }
 
@@ -560,6 +609,13 @@ class GameEngine {
         this.players[targetId].relations[playerId] = 'war';
 
         this.log('WAR_DECLARED', { attacker: playerId, defender: targetId });
+
+        // Capture history snapshot for war declaration
+        this.history.captureSnapshot(this, 'WAR_DECLARED', {
+            attacker: playerId,
+            defender: targetId
+        });
+
         return true;
     }
 
@@ -572,6 +628,13 @@ class GameEngine {
         this.players[targetId].relations[playerId] = 'peace';
 
         this.log('PEACE_MADE', { player1: playerId, player2: targetId });
+
+        // Capture history snapshot for peace
+        this.history.captureSnapshot(this, 'PEACE_MADE', {
+            player1: playerId,
+            player2: targetId
+        });
+
         return true;
     }
 
@@ -595,7 +658,14 @@ class GameEngine {
             this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.players.length;
         } while (this.getPlayerCities(this.currentPlayerIndex).length === 0 && !this.gameOver);
 
+        this.turnNumber++;
         this.log('TURN_END', { nextPlayer: this.currentPlayerIndex });
+
+        // Capture history snapshot at end of each turn
+        this.history.captureSnapshot(this, 'TURN_END', {
+            turnNumber: this.turnNumber,
+            nextPlayer: this.currentPlayerIndex
+        });
     }
 
     getPlayerCities(playerId) {
@@ -629,6 +699,12 @@ class GameEngine {
                 this.players[city.ownerId].techScore++;
                 this.applyTechBonus(city.ownerId);
                 this.log('TECH_COMPLETE', { player: city.ownerId, newScore: this.players[city.ownerId].techScore });
+
+                // Capture history snapshot for tech advancement
+                this.history.captureSnapshot(this, 'TECH_COMPLETE', {
+                    player: city.ownerId,
+                    newScore: this.players[city.ownerId].techScore
+                });
                 break;
             case 'WARRIOR':
                 this.spawnUnit(city, PIECE_TYPES.WARRIOR);
@@ -669,6 +745,13 @@ class GameEngine {
             this.pieces.push(unit);
             this.board[spawnTile.row][spawnTile.col] = unit;
             this.log('UNIT_SPAWNED', { type: unitType, location: spawnTile });
+
+            // Capture history snapshot for unit spawned
+            this.history.captureSnapshot(this, 'UNIT_SPAWNED', {
+                type: unitType,
+                location: spawnTile,
+                owner: city.ownerId
+            });
         } else {
             // No valid tile, pause production
             city.productionProgress--;
@@ -719,6 +802,12 @@ class GameEngine {
             }
 
             this.log('TERRITORY_EXPANDED', { player: playerId, tile: chosen });
+
+            // Capture history snapshot for territory expansion
+            this.history.captureSnapshot(this, 'TERRITORY_EXPANDED', {
+                player: playerId,
+                tile: chosen
+            });
         }
     }
 
