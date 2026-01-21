@@ -900,6 +900,7 @@ class GameScene extends Phaser.Scene {
         sprite.bgCircle.setStrokeStyle(4, 0xffffff);
 
         const piece = sprite.pieceData;
+        this.clearHighlights();
         if (piece.ownerId === this.engine.currentPlayerIndex && piece.type !== PIECE_TYPES.CITY) {
             this.showValidMoves(piece);
         }
