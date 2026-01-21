@@ -232,7 +232,7 @@ class GameEngine {
         }
 
         // Check for blockade (two warriors on opposite diagonal of a 2x2 square)
-        if (this.isBlockedByBlockade(piece.row, piece.col, targetRow, targetCol)) {
+        if (this.isBlockedByBlockade(piece.row, piece.col, targetRow, targetCol, piece.ownerId)) {
             return { valid: false, reason: 'Blocked by enemy blockade' };
         }
 
@@ -286,7 +286,7 @@ class GameEngine {
      * A piece at top-right cannot move to bottom-left (and vice versa) in the first case.
      * A piece at top-left cannot move to bottom-right (and vice versa) in the second case.
      */
-    isBlockedByBlockade(fromRow, fromCol, toRow, toCol) {
+    isBlockedByBlockade(fromRow, fromCol, toRow, toCol, movingOwnerId) {
         const rowDiff = toRow - fromRow;
         const colDiff = toCol - fromCol;
 
@@ -310,6 +310,9 @@ class GameEngine {
         if (!piece1 || !piece2) return false;
         if (piece1.type !== PIECE_TYPES.WARRIOR || piece2.type !== PIECE_TYPES.WARRIOR) return false;
         if (piece1.ownerId !== piece2.ownerId) return false;
+
+        // A player's own blockade does not block their own pieces
+        if (piece1.ownerId === movingOwnerId) return false;
 
         return true;
     }
