@@ -782,11 +782,12 @@ class GameScene extends Phaser.Scene {
                 entry.colorDot.setFillStyle(player.color.hex);
                 entry.nameText.setText(player.name);
 
-                const cities = this.engine.getPlayerCities(i).length;
-                entry.relationText.setText(`Cities: ${cities}`);
+                const techLevel = this.engine.players[i].techScore;
+                entry.relationText.setText(`Tech: ${techLevel}`);
 
                 // Show diplomacy button for other players
-                if (i !== this.engine.currentPlayerIndex && cities > 0) {
+                const hasCities = this.engine.getPlayerCities(i).length > 0;
+                if (i !== this.engine.currentPlayerIndex && hasCities) {
                     entry.diplomacyBtn.setVisible(true);
                     const relation = currentPlayer.relations[i];
                     // Use shorter text for compact mobile layout
