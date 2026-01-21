@@ -97,6 +97,19 @@ class CivChessAI {
 
         // Track our target for militaristic posturing
         this.postureTarget = null;
+
+        // Per-turn cache for expensive computations
+        this._turnCache = {};
+    }
+
+    /**
+     * Clear per-turn caches at the start of each turn
+     */
+    _clearTurnCache() {
+        this._turnCache = {
+            validCitySpots: null,
+            enemies: null
+        };
     }
 
     // ========================================
@@ -104,6 +117,9 @@ class CivChessAI {
     // ========================================
     executeTurn() {
         const actions = [];
+
+        // Clear per-turn cache
+        this._clearTurnCache();
 
         // Analyze the board state
         this.analyzeBoard();
@@ -275,12 +291,18 @@ class CivChessAI {
     }
 
     getEnemies() {
+        // Return cached result if available
+        if (this._turnCache.enemies !== null) {
+            return this._turnCache.enemies;
+        }
+
         const enemies = [];
         for (const [id, rel] of Object.entries(this.gameState.relations)) {
             if (rel.status === 'war') {
                 enemies.push(parseInt(id));
             }
         }
+        this._turnCache.enemies = enemies;
         return enemies;
     }
 
@@ -599,6 +621,11 @@ class CivChessAI {
     }
 
     findValidCitySpots() {
+        // Return cached result if available
+        if (this._turnCache.validCitySpots !== null) {
+            return this._turnCache.validCitySpots;
+        }
+
         const spots = [];
         for (let r = 0; r < BOARD_SIZE; r++) {
             for (let c = 0; c < BOARD_SIZE; c++) {
@@ -608,7 +635,9 @@ class CivChessAI {
                 }
             }
         }
-        return spots.sort((a, b) => b.value - a.value);
+        const sorted = spots.sort((a, b) => b.value - a.value);
+        this._turnCache.validCitySpots = sorted;
+        return sorted;
     }
 
     hasGoal(goalType) {
@@ -944,6 +973,121 @@ class CivChessAI {
 
                 moves.push({ row: newRow, col: newCol });
             }
+        }
+
+        return moves;
+    }
+
+    // ========================================
+    // A* PATHFINDING FOR WARRIORS
+    // ========================================
+
+    /**
+     * Find the best first move for a warrior to reach the target using A*.
+     * Returns the first step of the shortest path, or null if no path exists.
+     * Uses Chebyshev distance as heuristic (admissible for 8-directional movement).
+     */
+    findWarriorPathAStar(warrior, target) {
+        const startKey = `${warrior.row},${warrior.col}`;
+        const targetKey = `${target.row},${target.col}`;
+
+        if (startKey === targetKey) return null; // Already there
+
+        // Priority queue using array with insertion sort
+        const openSet = [];
+        const gCosts = new Map(); // Best g cost to reach each position
+        gCosts.set(startKey, 0);
+
+        // Get initial valid moves and add to open set
+        const initialMoves = this.engine.getValidMoves(warrior);
+        for (const move of initialMoves) {
+            const moveKey = `${move.row},${move.col}`;
+            if (moveKey === targetKey) {
+                return move; // Can reach target directly
+            }
+            const gCost = 1;
+            const hCost = this.getDistance(move, target); // Chebyshev distance
+            const fCost = gCost + hCost;
+
+            gCosts.set(moveKey, gCost);
+            this.insertIntoOpenSet(openSet, {
+                row: move.row,
+                col: move.col,
+                firstMove: move,
+                gCost: gCost,
+                fCost: fCost
+            });
+        }
+
+        // A* search with iteration limit to prevent long searches
+        const maxIterations = 100;
+        let iterations = 0;
+
+        while (openSet.length > 0 && iterations < maxIterations) {
+            iterations++;
+            const current = openSet.shift();
+            const currentKey = `${current.row},${current.col}`;
+
+            // Generate possible warrior moves from current position (8 directions, 1 tile)
+            const possibleMoves = this.getWarriorMovesFrom(current.row, current.col);
+
+            for (const nextPos of possibleMoves) {
+                const nextKey = `${nextPos.row},${nextPos.col}`;
+                const tentativeG = current.gCost + 1;
+
+                if (gCosts.has(nextKey) && tentativeG >= gCosts.get(nextKey)) {
+                    continue;
+                }
+
+                gCosts.set(nextKey, tentativeG);
+
+                if (nextKey === targetKey) {
+                    return current.firstMove; // Found path, return first move
+                }
+
+                const hCost = this.getDistance(nextPos, target);
+                const fCost = tentativeG + hCost;
+
+                this.insertIntoOpenSet(openSet, {
+                    row: nextPos.row,
+                    col: nextPos.col,
+                    firstMove: current.firstMove,
+                    gCost: tentativeG,
+                    fCost: fCost
+                });
+            }
+        }
+
+        return null; // No path found
+    }
+
+    /**
+     * Get all possible warrior moves from a given position (8 directions, 1 tile each).
+     */
+    getWarriorMovesFrom(row, col) {
+        const moves = [];
+        const directions = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],          [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+        ];
+
+        for (const [dr, dc] of directions) {
+            const newRow = row + dr;
+            const newCol = col + dc;
+
+            // Check bounds
+            if (newRow < 0 || newRow >= BOARD_SIZE || newCol < 0 || newCol >= BOARD_SIZE) {
+                continue;
+            }
+
+            // Check if tile is occupied by a friendly piece (can't pass through)
+            const piece = this.engine.board[newRow][newCol];
+            if (piece && piece.ownerId === this.playerId) {
+                continue; // Can't move through friendly pieces
+            }
+
+            moves.push({ row: newRow, col: newCol });
         }
 
         return moves;
@@ -1390,27 +1534,38 @@ class CivChessAI {
         const validMoves = this.engine.getValidMoves(warrior);
         if (validMoves.length === 0) return null;
 
-        // Find best move toward target
-        let bestMove = null;
-        let bestDist = Infinity;
-
+        // First check if we can attack an adjacent enemy (high priority)
         for (const move of validMoves) {
-            const dist = this.getDistance(move, target);
             const movePiece = this.engine.board[move.row][move.col];
-
-            // Prioritize attacking enemies
             if (movePiece && movePiece.ownerId !== this.playerId) {
                 const isEnemy = this.getEnemies().includes(movePiece.ownerId);
                 if (isEnemy) {
-                    bestMove = move;
-                    bestDist = -1; // Highest priority
-                    continue;
+                    const result = this.engine.movePiece(warrior, move.row, move.col);
+                    if (result.success) {
+                        return {
+                            type: result.combat ? AI_ACTION_TYPE.ATTACK : AI_ACTION_TYPE.MOVE_UNIT,
+                            pieceId: warrior.id,
+                            from: { row: warrior.row, col: warrior.col },
+                            to: move,
+                            combat: result.combat
+                        };
+                    }
                 }
             }
+        }
 
-            if (dist < bestDist) {
-                bestDist = dist;
-                bestMove = move;
+        // Use A* to find optimal path to target
+        let bestMove = this.findWarriorPathAStar(warrior, target);
+
+        // Fallback to greedy if A* fails (e.g., blocked paths)
+        if (!bestMove) {
+            let bestDist = Infinity;
+            for (const move of validMoves) {
+                const dist = this.getDistance(move, target);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestMove = move;
+                }
             }
         }
 
@@ -1501,8 +1656,10 @@ class CivChessAI {
             score: spot.value / (this.getManhattanDistance(settler, spot) + 1)
         })).sort((a, b) => b.score - a.score);
 
-        // Try BFS pathfinding for each spot until we find one with a valid path
-        for (const spot of scoredSpots) {
+        // Try A* pathfinding for top spots until we find one with a valid path
+        // Limit to top 5 spots to avoid excessive pathfinding calls
+        const spotsToTry = scoredSpots.slice(0, 5);
+        for (const spot of spotsToTry) {
             const bestMove = this.findSettlerPathAStar(settler, spot);
             if (bestMove) {
                 const result = this.engine.movePiece(settler, bestMove.row, bestMove.col);
@@ -1575,8 +1732,9 @@ class CivChessAI {
             score: spot.value / (this.getManhattanDistance(settler, spot) + 1)
         })).sort((a, b) => b.score - a.score);
 
-        // Try BFS pathfinding for each potential spot
-        for (const spot of scoredSpots) {
+        // Try A* pathfinding for top potential spots (limit to 5 for efficiency)
+        const spotsToTry = scoredSpots.slice(0, 5);
+        for (const spot of spotsToTry) {
             const bestMove = this.findSettlerPathAStar(settler, spot);
             if (bestMove) {
                 const result = this.engine.movePiece(settler, bestMove.row, bestMove.col);
