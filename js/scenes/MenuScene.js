@@ -6,18 +6,112 @@ class MenuScene extends Phaser.Scene {
         super({ key: 'MenuScene' });
         this.selectedPlayers = 2;
         this.selectedColorIndex = 0;
+        this.showingMainMenu = true;
+        this.mainMenuElements = [];
+        this.newGameElements = [];
     }
 
     create() {
         this.cameras.main.setBackgroundColor(COLORS.background);
+        this.showMainMenu();
+    }
+
+    showMainMenu() {
+        this.showingMainMenu = true;
+        this.clearElements(this.newGameElements);
+        this.newGameElements = [];
 
         const config = layoutConfig;
         const centerX = config.gameWidth / 2;
         const mobile = config.mobile;
 
-        // Adjust spacing and font sizes for mobile
         const titleSize = mobile ? '32px' : '48px';
         const subtitleSize = mobile ? '14px' : '20px';
+        const spacing = mobile ? 0.7 : 1;
+
+        let y = mobile ? 60 : 100;
+
+        // Title
+        const title = this.add.text(centerX, y, 'CIVCHESS', {
+            fontSize: titleSize,
+            fontStyle: 'bold',
+            color: COLORS.textPrimary
+        }).setOrigin(0.5);
+        this.mainMenuElements.push(title);
+
+        y += 60 * spacing;
+
+        // Subtitle
+        const subtitle = this.add.text(centerX, y, 'Civilization meets Chess', {
+            fontSize: subtitleSize,
+            color: COLORS.textSecondary
+        }).setOrigin(0.5);
+        this.mainMenuElements.push(subtitle);
+
+        y += 80 * spacing;
+
+        // New Game button
+        const newGameBtn = this.createButton(centerX, y, 'New Game', () => {
+            this.showNewGameOptions();
+        }, mobile ? 180 : 200, mobile ? 45 : 55);
+        this.mainMenuElements.push(newGameBtn);
+
+        y += 70 * spacing;
+
+        // Continue Game button (check if there's a continuable game)
+        const savedGames = GameHistory.listSavedGames();
+        const continuableGame = savedGames.find(g => g.winner === null);
+
+        const continueBtn = this.createButton(centerX, y, 'Continue Game', () => {
+            this.continueGame(continuableGame.gameId);
+        }, mobile ? 180 : 200, mobile ? 45 : 55);
+
+        // Disable if no continuable game
+        if (!continuableGame) {
+            continueBtn.bg.setFillStyle(0x2a2a3a);
+            continueBtn.bg.setAlpha(0.5);
+            continueBtn.label.setAlpha(0.5);
+            continueBtn.disableInteractive();
+        }
+        this.mainMenuElements.push(continueBtn);
+
+        y += 100 * spacing;
+
+        // Instructions
+        const instructionSize = mobile ? '11px' : '14px';
+        const instructions = mobile ? [
+            'Cities - Build units & territory',
+            'Warriors - Move 1, attack',
+            'Settlers - Move 3, found cities',
+            'Capture all cities to win!'
+        ] : [
+            'Cities (Rooks) - Build units and expand territory',
+            'Warriors (Pawns) - Move 1 tile, attack enemies',
+            'Settlers (Knights) - Move 3 tiles, found new cities',
+            '',
+            'First to capture all cities wins!'
+        ];
+
+        const lineSpacing = mobile ? 18 : 25;
+        instructions.forEach((text, i) => {
+            const instr = this.add.text(centerX, y + i * lineSpacing, text, {
+                fontSize: instructionSize,
+                color: COLORS.textSecondary
+            }).setOrigin(0.5);
+            this.mainMenuElements.push(instr);
+        });
+    }
+
+    showNewGameOptions() {
+        this.showingMainMenu = false;
+        this.clearElements(this.mainMenuElements);
+        this.mainMenuElements = [];
+
+        const config = layoutConfig;
+        const centerX = config.gameWidth / 2;
+        const mobile = config.mobile;
+
+        const titleSize = mobile ? '32px' : '48px';
         const labelSize = mobile ? '18px' : '24px';
         const instructionSize = mobile ? '11px' : '14px';
         const spacing = mobile ? 0.7 : 1;
@@ -25,27 +119,29 @@ class MenuScene extends Phaser.Scene {
         let y = mobile ? 40 : 80;
 
         // Title
-        this.add.text(centerX, y, 'CIVCHESS', {
+        const title = this.add.text(centerX, y, 'CIVCHESS', {
             fontSize: titleSize,
             fontStyle: 'bold',
             color: COLORS.textPrimary
         }).setOrigin(0.5);
+        this.newGameElements.push(title);
 
         y += 60 * spacing;
 
-        // Subtitle
-        this.add.text(centerX, y, 'Civilization meets Chess', {
-            fontSize: subtitleSize,
-            color: COLORS.textSecondary
-        }).setOrigin(0.5);
+        // Back button
+        const backBtn = this.createButton(mobile ? 50 : 80, y - 30, '\u2190 Back', () => {
+            this.showMainMenu();
+        }, mobile ? 80 : 100, mobile ? 30 : 35);
+        this.newGameElements.push(backBtn);
 
-        y += 60 * spacing;
+        y += 30 * spacing;
 
         // Player count selection
-        this.add.text(centerX, y, 'Number of Players:', {
+        const playerLabel = this.add.text(centerX, y, 'Number of Players:', {
             fontSize: labelSize,
             color: COLORS.textPrimary
         }).setOrigin(0.5);
+        this.newGameElements.push(playerLabel);
 
         y += 40 * spacing;
 
@@ -59,16 +155,18 @@ class MenuScene extends Phaser.Scene {
                 this.updatePlayerButtons();
             }, mobile ? 50 : 60, mobile ? 35 : 40);
             this.playerButtons.push({ btn, value: i });
+            this.newGameElements.push(btn);
         }
         this.updatePlayerButtons();
 
         y += 60 * spacing;
 
         // Color selection
-        this.add.text(centerX, y, 'Your Color:', {
+        const colorLabel = this.add.text(centerX, y, 'Your Color:', {
             fontSize: labelSize,
             color: COLORS.textPrimary
         }).setOrigin(0.5);
+        this.newGameElements.push(colorLabel);
 
         y += 40 * spacing;
 
@@ -88,15 +186,17 @@ class MenuScene extends Phaser.Scene {
                 this.updateColorSwatches();
             });
             this.colorSwatches.push({ swatch, index });
+            this.newGameElements.push(swatch);
         });
         this.updateColorSwatches();
 
         y += 70 * spacing;
 
         // Play button
-        this.createButton(centerX, y, 'PLAY', () => {
+        const playBtn = this.createButton(centerX, y, 'PLAY', () => {
             this.startGame();
         }, mobile ? 120 : 150, mobile ? 40 : 50);
+        this.newGameElements.push(playBtn);
 
         y += 60 * spacing;
 
@@ -116,11 +216,27 @@ class MenuScene extends Phaser.Scene {
 
         const lineSpacing = mobile ? 18 : 25;
         instructions.forEach((text, i) => {
-            this.add.text(centerX, y + i * lineSpacing, text, {
+            const instr = this.add.text(centerX, y + i * lineSpacing, text, {
                 fontSize: instructionSize,
                 color: COLORS.textSecondary
             }).setOrigin(0.5);
+            this.newGameElements.push(instr);
         });
+    }
+
+    clearElements(elements) {
+        elements.forEach(el => {
+            if (el && el.destroy) {
+                el.destroy();
+            }
+        });
+    }
+
+    continueGame(gameId) {
+        const savedGame = GameHistory.loadFromLocalStorage(gameId);
+        if (savedGame) {
+            this.scene.start('GameScene', { savedGame: savedGame });
+        }
     }
 
     createButton(x, y, text, callback, width = 60, height = 40) {

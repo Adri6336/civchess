@@ -16,14 +16,19 @@ class GameScene extends Phaser.Scene {
     }
 
     init(data) {
-        this.playerConfigs = data.playerConfigs;
+        this.playerConfigs = data.playerConfigs || null;
+        this.savedGame = data.savedGame || null;
     }
 
     create() {
         this.cameras.main.setBackgroundColor(COLORS.background);
 
-        // Initialize game engine
-        this.engine.setupGame(this.playerConfigs);
+        // Initialize game engine - either new game or restored game
+        if (this.savedGame) {
+            this.engine.restoreFromSavedGame(this.savedGame);
+        } else {
+            this.engine.setupGame(this.playerConfigs);
+        }
 
         // Create graphics layers
         this.tileGraphics = this.add.graphics();

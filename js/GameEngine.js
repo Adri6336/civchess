@@ -835,4 +835,86 @@ class GameEngine {
         // Placeholder for AI turn execution
         this.log('AI_TURN_SKIP', { player: playerId, reason: 'AI not implemented' });
     }
+
+    /**
+     * Restore game state from a saved game snapshot
+     * @param {Object} savedGame - The saved game data from localStorage
+     */
+    restoreFromSavedGame(savedGame) {
+        this.reset();
+
+        const latestSnapshot = savedGame.snapshots[savedGame.snapshots.length - 1];
+        const metadata = savedGame.metadata;
+
+        // Restore players from metadata
+        metadata.players.forEach((p, index) => {
+            this.players.push({
+                id: p.id,
+                name: p.name,
+                color: p.color,
+                techScore: 0,
+                isHuman: true,
+                relations: {}
+            });
+        });
+
+        // Restore tech levels
+        if (latestSnapshot.techLevels) {
+            latestSnapshot.techLevels.forEach(tech => {
+                if (this.players[tech.playerId]) {
+                    this.players[tech.playerId].techScore = tech.techScore;
+                }
+            });
+        }
+
+        // Restore player relations
+        if (latestSnapshot.playerRelations) {
+            latestSnapshot.playerRelations.forEach(rel => {
+                if (this.players[rel.playerId]) {
+                    this.players[rel.playerId].relations = { ...rel.relations };
+                }
+            });
+        }
+
+        // Restore tile ownership
+        if (latestSnapshot.tileOwnership) {
+            this.tileOwnership = latestSnapshot.tileOwnership.map(row => row.slice());
+        }
+
+        // Restore pieces
+        if (latestSnapshot.pieces) {
+            latestSnapshot.pieces.forEach(p => {
+                const piece = {
+                    id: p.id,
+                    type: p.type,
+                    ownerId: p.ownerId,
+                    row: p.row,
+                    col: p.col,
+                    hp: p.hp,
+                    maxHp: p.maxHp,
+                    damage: p.type === PIECE_TYPES.WARRIOR ? 1 + (this.players[p.ownerId]?.techScore || 0) : 0,
+                    hasMoved: p.hasMoved || false,
+                    production: p.production || null,
+                    productionProgress: p.productionProgress || 0,
+                    productionPaused: false,
+                    repeatProduction: false
+                };
+                this.pieces.push(piece);
+                this.board[piece.row][piece.col] = piece;
+            });
+        }
+
+        // Restore game state
+        this.currentPlayerIndex = latestSnapshot.currentPlayerIndex;
+        this.turnNumber = latestSnapshot.turnNumber || 0;
+
+        // Restore history with existing game ID
+        this.history.gameId = savedGame.gameId;
+        this.history.metadata = { ...metadata };
+        this.history.snapshots = [...savedGame.snapshots];
+
+        this.log('GAME_RESTORED', { gameId: savedGame.gameId, turnNumber: this.turnNumber });
+
+        return true;
+    }
 }
