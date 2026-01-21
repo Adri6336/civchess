@@ -589,8 +589,13 @@ class GameScene extends Phaser.Scene {
         container.setSize(width, 24);
         container.setInteractive({ useHandCursor: true });
 
-        container.on('pointerover', () => bg.setFillStyle(0x4a4a6a));
-        container.on('pointerout', () => bg.setFillStyle(0x3a3a5a));
+        container.selected = false;
+        container.on('pointerover', () => {
+            if (!container.selected) bg.setFillStyle(0x4a4a6a);
+        });
+        container.on('pointerout', () => {
+            if (!container.selected) bg.setFillStyle(0x3a3a5a);
+        });
         container.on('pointerdown', callback);
 
         container.bg = bg;
@@ -735,12 +740,22 @@ class GameScene extends Phaser.Scene {
 
         this.productionButtons.forEach(({ btn, type }) => {
             btn.setVisible(isOwnedCity);
-            // Disable repair button if city is at full health
-            if (type === 'REPAIR' && isOwnedCity) {
-                const isFullHealth = piece.hp >= piece.maxHp;
-                btn.bg.setFillStyle(isFullHealth ? 0x2a2a3a : 0x3a3a5a);
-                btn.bg.setAlpha(isFullHealth ? 0.5 : 1);
-                btn.label.setAlpha(isFullHealth ? 0.5 : 1);
+            if (isOwnedCity) {
+                // Highlight the currently selected production
+                const isSelected = piece.production === type;
+                btn.selected = isSelected;
+
+                // Disable repair button if city is at full health
+                if (type === 'REPAIR') {
+                    const isFullHealth = piece.hp >= piece.maxHp;
+                    btn.bg.setFillStyle(isFullHealth ? 0x2a2a3a : (isSelected ? 0x00aa00 : 0x3a3a5a));
+                    btn.bg.setAlpha(isFullHealth ? 0.5 : 1);
+                    btn.label.setAlpha(isFullHealth ? 0.5 : 1);
+                } else {
+                    btn.bg.setFillStyle(isSelected ? 0x00aa00 : 0x3a3a5a);
+                    btn.bg.setAlpha(1);
+                    btn.label.setAlpha(1);
+                }
             }
         });
 
@@ -841,8 +856,7 @@ class GameScene extends Phaser.Scene {
                 if (piece.ownerId === this.engine.currentPlayerIndex && piece.type !== PIECE_TYPES.CITY) {
                     const result = this.engine.movePiece(piece, row, col);
                     if (result.success) {
-                        this.onMoveSuccess(piece, result);
-                        this.deselectPiece();
+                        this.onMoveSuccessAnimated(piece, result);
                         return;
                     }
                 }
@@ -925,6 +939,39 @@ class GameScene extends Phaser.Scene {
         // Update ownership display
         this.drawOwnership();
         this.updateUI();
+    }
+
+    onMoveSuccessAnimated(piece, result) {
+        const sprite = this.pieceSprites.get(piece.id);
+        if (!sprite) return;
+
+        const targetX = BOARD_OFFSET + piece.col * TILE_SIZE + TILE_SIZE / 2;
+        const targetY = BOARD_OFFSET + piece.row * TILE_SIZE + TILE_SIZE / 2;
+
+        // Clear highlights immediately
+        this.clearHighlights();
+
+        // Animate the piece movement
+        this.tweens.add({
+            targets: sprite,
+            x: targetX,
+            y: targetY,
+            duration: 200,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                // Handle combat results
+                if (result.combat) {
+                    if (result.combat.defenderDestroyed && !result.combat.cityFlipped) {
+                        this.removePieceSprite(result.combat.defender);
+                    }
+                }
+
+                // Update ownership display
+                this.drawOwnership();
+                this.updateUI();
+                this.deselectPiece();
+            }
+        });
     }
 
     selectProduction(type) {

@@ -139,8 +139,13 @@ class MenuScene extends Phaser.Scene {
         container.setSize(width, height);
         container.setInteractive({ useHandCursor: true });
 
-        container.on('pointerover', () => bg.setFillStyle(0x5a5a7a));
-        container.on('pointerout', () => bg.setFillStyle(0x4a4a6a));
+        container.selected = false;
+        container.on('pointerover', () => {
+            if (!container.selected) bg.setFillStyle(0x5a5a7a);
+        });
+        container.on('pointerout', () => {
+            if (!container.selected) bg.setFillStyle(0x4a4a6a);
+        });
         container.on('pointerdown', callback);
 
         container.bg = bg;
@@ -150,8 +155,10 @@ class MenuScene extends Phaser.Scene {
     updatePlayerButtons() {
         this.playerButtons.forEach(({ btn, value }) => {
             if (value === this.selectedPlayers) {
+                btn.selected = true;
                 btn.bg.setFillStyle(0x00aa00);
             } else {
+                btn.selected = false;
                 btn.bg.setFillStyle(0x4a4a6a);
             }
         });
