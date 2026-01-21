@@ -22,23 +22,3 @@ const config = {
 
 // Create game instance
 const game = new Phaser.Game(config);
-
-// Handle orientation/resize changes - recompose instead of scale
-let resizeTimeout;
-window.addEventListener('resize', () => {
-    // Debounce resize events
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-        const newConfig = Layout.calculate();
-        layoutConfig = newConfig;
-
-        // Resize the canvas to new dimensions
-        game.scale.resize(newConfig.gameWidth, newConfig.gameHeight);
-
-        // Restart the active scene to recompose with new tile size
-        const activeScene = game.scene.getScenes(true)[0];
-        if (activeScene) {
-            activeScene.scene.restart();
-        }
-    }, 150);
-});
