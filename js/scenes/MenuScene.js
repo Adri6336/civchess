@@ -7,6 +7,7 @@ class MenuScene extends Phaser.Scene {
         this.humanPlayers = 2;
         this.aiPlayers = 0;
         this.selectedColorIndex = 0;
+        this.selectedDifficulty = AI_DIFFICULTY.MEDIUM;
         this.showingMainMenu = true;
         this.mainMenuElements = [];
         this.newGameElements = [];
@@ -205,6 +206,39 @@ class MenuScene extends Phaser.Scene {
 
         y += 55 * spacing;
 
+        // AI Difficulty selection
+        const difficultyLabel = this.add.text(centerX, y, 'AI Difficulty:', {
+            fontSize: labelSize,
+            color: COLORS.textPrimary
+        }).setOrigin(0.5);
+        this.newGameElements.push(difficultyLabel);
+
+        y += 35 * spacing;
+
+        // Difficulty buttons (Easy, Medium, Hard)
+        this.difficultyButtons = [];
+        const difficulties = [
+            { key: AI_DIFFICULTY.EASY, label: 'Easy', color: 0x44aa44 },
+            { key: AI_DIFFICULTY.MEDIUM, label: 'Medium', color: 0xaaaa44 },
+            { key: AI_DIFFICULTY.HARD, label: 'Hard', color: 0xaa4444 }
+        ];
+        const diffBtnWidth = mobile ? 70 : 90;
+        const diffBtnSpacing = mobile ? 80 : 100;
+
+        difficulties.forEach((diff, i) => {
+            const btnX = centerX + (i - 1) * diffBtnSpacing;
+            const btn = this.createButton(btnX, y, diff.label, () => {
+                this.setDifficulty(diff.key);
+            }, diffBtnWidth, mobile ? 32 : 38);
+            btn.difficultyKey = diff.key;
+            btn.highlightColor = diff.color;
+            this.difficultyButtons.push(btn);
+            this.newGameElements.push(btn);
+        });
+        this.updateDifficultyButtons();
+
+        y += 55 * spacing;
+
         // Color selection
         const colorLabel = this.add.text(centerX, y, 'Your Color:', {
             fontSize: labelSize,
@@ -298,6 +332,25 @@ class MenuScene extends Phaser.Scene {
             if (value === this.aiPlayers) {
                 btn.selected = true;
                 btn.bg.setFillStyle(0x00aa00);
+            } else {
+                btn.selected = false;
+                btn.bg.setFillStyle(0x4a4a6a);
+            }
+        });
+    }
+
+    setDifficulty(difficulty) {
+        this.selectedDifficulty = difficulty;
+        this.updateDifficultyButtons();
+    }
+
+    updateDifficultyButtons() {
+        if (!this.difficultyButtons) return;
+
+        this.difficultyButtons.forEach(btn => {
+            if (btn.difficultyKey === this.selectedDifficulty) {
+                btn.selected = true;
+                btn.bg.setFillStyle(btn.highlightColor);
             } else {
                 btn.selected = false;
                 btn.bg.setFillStyle(0x4a4a6a);
@@ -726,7 +779,8 @@ class MenuScene extends Phaser.Scene {
             usedColors.add(colorIndex);
             playerConfigs.push({
                 color: PLAYER_COLORS[colorIndex],
-                isAI: true
+                isAI: true,
+                aiDifficulty: this.selectedDifficulty
             });
         }
 

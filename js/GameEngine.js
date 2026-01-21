@@ -48,6 +48,7 @@ class GameEngine {
                 techScore: 0,
                 isHuman: !config.isAI,
                 isAI: config.isAI || false,
+                aiDifficulty: config.aiDifficulty || AI_DIFFICULTY.MEDIUM,
                 relations: {} // will be filled with peace/war status
             });
         });

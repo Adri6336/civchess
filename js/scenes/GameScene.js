@@ -35,11 +35,11 @@ class GameScene extends Phaser.Scene {
         // Initialize AI Manager
         this.aiManager = new AIManager(this.engine);
 
-        // Register AI players
+        // Register AI players with their configured difficulty
         this.engine.players.forEach((player, index) => {
             if (player.isAI) {
-                // Default to Medium difficulty - could be configurable later
-                this.aiManager.registerAIPlayer(index, AI_DIFFICULTY.MEDIUM);
+                const difficulty = player.aiDifficulty || AI_DIFFICULTY.MEDIUM;
+                this.aiManager.registerAIPlayer(index, difficulty);
             }
         });
 
