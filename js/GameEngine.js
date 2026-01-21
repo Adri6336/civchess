@@ -166,7 +166,7 @@ class GameEngine {
             production: null,
             productionProgress: 0,
             productionPaused: false,
-            repeatProduction: false
+            repeatProduction: true
         };
     }
 
