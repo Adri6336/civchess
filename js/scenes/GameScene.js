@@ -996,7 +996,83 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    playBumpAnimation(attackerSprite, result, attackerPiece) {
+        const originalX = BOARD_OFFSET + result.originalPos.col * TILE_SIZE + TILE_SIZE / 2;
+        const originalY = BOARD_OFFSET + result.originalPos.row * TILE_SIZE + TILE_SIZE / 2;
+        const targetX = BOARD_OFFSET + result.targetPos.col * TILE_SIZE + TILE_SIZE / 2;
+        const targetY = BOARD_OFFSET + result.targetPos.row * TILE_SIZE + TILE_SIZE / 2;
+
+        // Calculate bump point (halfway between attacker and defender)
+        const bumpX = (originalX + targetX) / 2;
+        const bumpY = (originalY + targetY) / 2;
+
+        // Get defender sprite
+        const defenderPiece = this.engine.board[result.targetPos.row][result.targetPos.col];
+        const defenderSprite = defenderPiece ? this.pieceSprites.get(defenderPiece.id) : null;
+
+        // Animate attacker moving toward target then bouncing back
+        this.tweens.add({
+            targets: attackerSprite,
+            x: bumpX,
+            y: bumpY,
+            duration: 100,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                // Bounce back to original position
+                this.tweens.add({
+                    targets: attackerSprite,
+                    x: originalX,
+                    y: originalY,
+                    duration: 150,
+                    ease: 'Back.easeOut',
+                    onComplete: () => {
+                        // Update UI after animation completes
+                        this.updatePieceSprite(attackerPiece);
+                        if (defenderPiece) {
+                            this.updatePieceSprite(defenderPiece);
+                        }
+                        this.updateUI();
+                    }
+                });
+            }
+        });
+
+        // If defender is a warrior (not a city), animate mutual bump
+        if (defenderSprite && defenderPiece && defenderPiece.type === PIECE_TYPES.WARRIOR) {
+            // Calculate defender's bump point (toward attacker)
+            const defenderBumpX = (targetX + originalX) / 2;
+            const defenderBumpY = (targetY + originalY) / 2;
+
+            this.tweens.add({
+                targets: defenderSprite,
+                x: defenderBumpX,
+                y: defenderBumpY,
+                duration: 100,
+                ease: 'Quad.easeOut',
+                onComplete: () => {
+                    // Bounce back to original position
+                    this.tweens.add({
+                        targets: defenderSprite,
+                        x: targetX,
+                        y: targetY,
+                        duration: 150,
+                        ease: 'Back.easeOut'
+                    });
+                }
+            });
+        }
+    }
+
     onMoveSuccess(piece, result) {
+        // Handle blocked attack with bump animation
+        if (result.blocked) {
+            const sprite = this.pieceSprites.get(piece.id);
+            if (sprite) {
+                this.playBumpAnimation(sprite, result, piece);
+            }
+            return;
+        }
+
         // Update sprite position
         this.updatePieceSprite(piece);
 
@@ -1016,11 +1092,18 @@ class GameScene extends Phaser.Scene {
         const sprite = this.pieceSprites.get(piece.id);
         if (!sprite) return;
 
-        const targetX = BOARD_OFFSET + piece.col * TILE_SIZE + TILE_SIZE / 2;
-        const targetY = BOARD_OFFSET + piece.row * TILE_SIZE + TILE_SIZE / 2;
-
         // Clear highlights immediately
         this.clearHighlights();
+
+        // Handle blocked attack with bump animation
+        if (result.blocked) {
+            this.playBumpAnimation(sprite, result, piece);
+            this.deselectPiece();
+            return;
+        }
+
+        const targetX = BOARD_OFFSET + piece.col * TILE_SIZE + TILE_SIZE / 2;
+        const targetY = BOARD_OFFSET + piece.row * TILE_SIZE + TILE_SIZE / 2;
 
         // Animate the piece movement
         this.tweens.add({

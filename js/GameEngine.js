@@ -316,6 +316,17 @@ class GameEngine {
             if (!combatResult.attackerSurvived) {
                 return { success: true, combat: combatResult };
             }
+            // If defender survived and wasn't captured, attacker bounces back
+            if (!combatResult.defenderDestroyed && !combatResult.cityFlipped) {
+                piece.hasMoved = true;
+                return {
+                    success: true,
+                    combat: combatResult,
+                    blocked: true,
+                    originalPos: { row: piece.row, col: piece.col },
+                    targetPos: { row: targetRow, col: targetCol }
+                };
+            }
         }
 
         // Move the piece
