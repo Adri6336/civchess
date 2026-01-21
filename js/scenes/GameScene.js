@@ -780,7 +780,21 @@ class GameScene extends Phaser.Scene {
                 const player = this.engine.players[i];
                 entry.setVisible(true);
                 entry.colorDot.setFillStyle(player.color.hex);
-                entry.nameText.setText(player.name);
+
+                // Check if at war with this player (war or peace_proposed means still at war)
+                const myRelation = currentPlayer.relations[i];
+                const theirRelation = player.relations[this.engine.currentPlayerIndex];
+                const atWar = myRelation === 'war' || myRelation === 'peace_proposed' ||
+                              theirRelation === 'war' || theirRelation === 'peace_proposed';
+
+                // Show red sword if at war
+                const warIndicator = atWar ? ' \u2694' : '';
+                entry.nameText.setText(player.name + warIndicator);
+                if (atWar) {
+                    entry.nameText.setColor('#ff4444');
+                } else {
+                    entry.nameText.setColor(COLORS.textPrimary);
+                }
 
                 const techLevel = this.engine.players[i].techScore;
                 entry.relationText.setText(`Tech: ${techLevel}`);
@@ -789,13 +803,34 @@ class GameScene extends Phaser.Scene {
                 const hasCities = this.engine.getPlayerCities(i).length > 0;
                 if (i !== this.engine.currentPlayerIndex && hasCities) {
                     entry.diplomacyBtn.setVisible(true);
-                    const relation = currentPlayer.relations[i];
-                    // Use shorter text for compact mobile layout
-                    if (entry.compact) {
-                        entry.diplomacyBtn.label.setText(relation === 'peace' ? 'War' : 'Peace');
+
+                    // Check if they have proposed peace to us
+                    const theyProposedPeace = theirRelation === 'peace_proposed';
+                    const weProposedPeace = myRelation === 'peace_proposed';
+
+                    let buttonText;
+                    let buttonColor;
+
+                    if (myRelation === 'peace' && theirRelation === 'peace') {
+                        // At peace - can declare war
+                        buttonText = entry.compact ? 'War' : 'Declare War';
+                        buttonColor = COLORS.textPrimary;
+                    } else if (theyProposedPeace) {
+                        // They proposed peace - we can accept
+                        buttonText = entry.compact ? 'Accept' : 'Accept Peace';
+                        buttonColor = '#ffffff';
+                    } else if (weProposedPeace) {
+                        // We proposed peace - waiting for them
+                        buttonText = entry.compact ? 'Pending' : 'Peace Pending';
+                        buttonColor = '#888888';
                     } else {
-                        entry.diplomacyBtn.label.setText(relation === 'peace' ? 'Declare War' : 'Propose Peace');
+                        // At war - can propose peace
+                        buttonText = entry.compact ? 'Peace' : 'Propose Peace';
+                        buttonColor = COLORS.textPrimary;
                     }
+
+                    entry.diplomacyBtn.label.setText(buttonText);
+                    entry.diplomacyBtn.label.setColor(buttonColor);
                 } else {
                     entry.diplomacyBtn.setVisible(false);
                 }
@@ -1250,11 +1285,20 @@ class GameScene extends Phaser.Scene {
 
     toggleDiplomacy(targetIndex) {
         const currentPlayer = this.engine.getCurrentPlayer();
-        const relation = currentPlayer.relations[targetIndex];
+        const targetPlayer = this.engine.players[targetIndex];
+        const myRelation = currentPlayer.relations[targetIndex];
+        const theirRelation = targetPlayer.relations[this.engine.currentPlayerIndex];
 
-        if (relation === 'peace') {
+        if (myRelation === 'peace' && theirRelation === 'peace') {
+            // At peace - declare war
             this.engine.declareWar(this.engine.currentPlayerIndex, targetIndex);
+        } else if (theirRelation === 'peace_proposed') {
+            // They proposed peace - accept it
+            this.engine.acceptPeace(this.engine.currentPlayerIndex, targetIndex);
+        } else if (myRelation === 'peace_proposed') {
+            // We already proposed - do nothing (pending)
         } else {
+            // At war - propose peace
             this.engine.proposePeace(this.engine.currentPlayerIndex, targetIndex);
         }
 

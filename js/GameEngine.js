@@ -667,10 +667,32 @@ class GameEngine {
     proposePeace(playerId, targetId) {
         if (playerId === targetId) return false;
 
-        // For now, peace is automatically accepted
+        // Only set proposing player's relation - other player must accept
+        const player = this.players[playerId];
+        player.relations[targetId] = 'peace_proposed';
+
+        this.log('PEACE_PROPOSED', { proposer: playerId, target: targetId });
+
+        // Capture history snapshot for peace proposal
+        this.history.captureSnapshot(this, 'PEACE_PROPOSED', {
+            proposer: playerId,
+            target: targetId
+        });
+
+        return true;
+    }
+
+    acceptPeace(playerId, targetId) {
+        if (playerId === targetId) return false;
+
+        // Check that target has proposed peace
+        const target = this.players[targetId];
+        if (target.relations[playerId] !== 'peace_proposed') return false;
+
+        // Both players now at peace
         const player = this.players[playerId];
         player.relations[targetId] = 'peace';
-        this.players[targetId].relations[playerId] = 'peace';
+        target.relations[playerId] = 'peace';
 
         this.log('PEACE_MADE', { player1: playerId, player2: targetId });
 
