@@ -265,6 +265,7 @@ class MenuScene extends Phaser.Scene {
         container.on('pointerdown', callback);
 
         container.bg = bg;
+        container.label = label;
         return container;
     }
 
