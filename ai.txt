@@ -1,0 +1,36 @@
+The AI of CivChess will follow concrete and dynamic strategy based upon the core identity of a given AI player being expansionistic (win through diplomatic acquisition of cities), or militaristic (win through conquering everyone). Their goals and responses to threats will determine this.
+
+# All AIs
+
+All AIs should be able to look at the board and determine what is going on. Where are the cities located? Where are the concentrations of warriors, enemy and those at peace? How have the other players been acting; are they expansionistic or militaristic, and are they an immediate threat?
+
+They should work towards the sub goals of their personality, but adopt other goals according to what is going on.
+
+The difficulty levels indicate the amount of errors they take on their steps to completing goals and the level of scrutiny they give humans over AIs. On easy, the AI should make frequent errors (like randomly selecting the wrong production, randomly moving a unit instead of using optimal paths) and treat humans no differently. On medium, the AI should make fewer errors though still making them occasionally and be a little more concerned with the humans. On hard, the AI makes no errors and all actions of the humans are more heavily scrutinized by the AI; humans are considered extreme threats.
+
+Individual warrior behavior should match the overall strategic objectives outlined by the AI. However, if a warrior gets into adjacency with an enemy unit, there is a 1/3 chance that they will attack the unit instead of focusing on the objective dictated to them, regardless on if they are in their way or not. If a warrior is trying to get past a diagonal blockade, it will treat the enemy as in the way and attack the blockaders.
+
+Each warrior will be given a target to track by the player. This is its objective. It should follow the objective for 5 turns, then re-evaluate if the progress to the objective has been made. This could be determined by distance to the target and the difference in HP of the target from before to the re-evaluation time (if less HP than before, this is good; if more, this is bad).
+
+When attempting to demilitarize an opponent, warriors will target the adversary's warriors. At 1 HP, 2 warriors per enemy warrior is ideal at at any given moment. This scales.
+
+# Expansionistic AI
+
+Expansionistic AIs are those that focus on winning through the acquisition of all tiles, and consequently all cities. Their primary focus is defense: create strong borders, have a technologically advanced military (even if not super expansive), and establish cities.
+
+The AI will have the following goal types:
+	- Border Establishment: the AI will attempt to create diagonal and orthogonal walls of warriors to secure as large an empty space as it can around its cities. In the most ideal state, the AI will blockade a diagonal + orthogonal wall >= 25% of the board. In its weaker state the borders surround the unit heat maps of other players. The AI knows that placing units diagonally prevents other players units from passing, and solid orthogonal walls do the same. By cordoning off space, it can secure land for future development.
+	 - Defense Industry: the AI will focus on the creation of new units to support a solid border wall, and at least 4 warriors per city for defense. On a 5x5 grid, the AI will prefer (but move accordingly) to place warriors around a city positioned at [2,2] by putting warriors at [2,0], [0,2], [2,4], and [4,2]. If more cities are too close or the city is by a boundary, the placement changes. This is a desire and tendecy, not a requirement.
+	 - DARPA: The AI will focus on completing at least 1 tech growth level for the duration of this goal. If the AI sees that an adversary that is risky (though not yet necessarily indicating immediate or immanent hostility) and has a higher tech level and not an overwhelming force, this project will be prioritized to obtain a pairity with that player.
+	 - Posturing: When an enemy builds forces near them, the AI will send its own forces near those built up forces and build more warriors to match the build up if necessary. If a player has previously declared war, more units will be placed opposite to them than usual.
+	 - War Behavior: the primary aim is the demilitarization and demoralization of the enemy. The AI will target the adversary's units first, and if a city of theirs becomes unguarded, send a contingent of the overall military to conquer it. Almost all cities will be converted to warrior production regardless of current project status with the exception of at least one city which should be dedicated to science if the city count is >= 3. During war, only warriors and science can be worked on. Aggression towards enemies is prioritized, and if there's more than one war, the most immediate threat will be selected for primary focus with some units being sent off to distract the other ones. The AI will propose peace immediately and accept peace immediately unless its power is more than double that of the enemy, in which case it will try to conquer at least 50% of its cities before accepting peace unless they dip in strength which triggers immediate peace.
+	 Expansion: in peacetime, this goal will prioritize the acquisition of land through the diplomacy task. When a tile which is valid for city placement becomes available, the production will immediately change to settlers (one settler produced per valid spot, if more cities are available they should keep to their work). 
+	 
+# Militaristic AI
+
+Militaristic AI try to win the game though conquest. They will focus on building up forces above all.
+
+	- Border Establishment: they will create boundaries like the expansionist. Though instead of trying to settle, they will build up forces behind it. 
+	- Defense through Offence: militaristic AI will decide on a target, build up forces to be double in number to that of the target, and declare war and invade. If the target has a tech level higher than them, the militaristic AI will focus on increasing their unit count according to the additional hp of the enemy's warriors (e.g. a player with tech 1 will have 2hp per warrior, meaning the militaristic AI will need 2 warriors for every one of theirs) and increasing their own tech to obtain pairity.
+	- Posturing: this is the same as the expansionistic AI with the difference in that whoever builds up forces becomes the target of this AI.
+	- War Behavior: the militaristic AI primary builds up units to throw at enemy cities. Units will be sent to every spot adjacent to a targeted city that is legal to attack from, and attack every turn while adjacent until they take the city. All other units will be sent to demilitarize the adversary. As units adjacent to enemy cities fall, more units will be assigned to replace them.
