@@ -12,6 +12,7 @@ class GameScene extends Phaser.Scene {
         this.selectedPiece = null;
         this.draggedPiece = null;
         this.originalPosition = null;
+        this.hasDragged = false;
     }
 
     init(data) {
@@ -790,6 +791,7 @@ class GameScene extends Phaser.Scene {
 
             this.draggedPiece = gameObject;
             this.originalPosition = { x: gameObject.x, y: gameObject.y };
+            this.hasDragged = false;
 
             this.children.bringToTop(gameObject);
             this.tweens.add({
@@ -804,6 +806,7 @@ class GameScene extends Phaser.Scene {
 
         this.input.on('drag', (pointer, gameObject, dragX, dragY) => {
             if (this.draggedPiece !== gameObject) return;
+            this.hasDragged = true;
             gameObject.x = dragX;
             gameObject.y = dragY;
         });
@@ -818,27 +821,43 @@ class GameScene extends Phaser.Scene {
                 duration: 100
             });
 
-            const col = Math.floor((gameObject.x - BOARD_OFFSET) / TILE_SIZE);
-            const row = Math.floor((gameObject.y - BOARD_OFFSET) / TILE_SIZE);
-            const piece = gameObject.pieceData;
+            // Only process move if actual dragging occurred
+            if (this.hasDragged) {
+                const col = Math.floor((gameObject.x - BOARD_OFFSET) / TILE_SIZE);
+                const row = Math.floor((gameObject.y - BOARD_OFFSET) / TILE_SIZE);
+                const piece = gameObject.pieceData;
 
-            if (this.engine.isValidTile(row, col)) {
-                const result = this.engine.movePiece(piece, row, col);
-                if (result.success) {
-                    this.onMoveSuccess(piece, result);
+                if (this.engine.isValidTile(row, col)) {
+                    const result = this.engine.movePiece(piece, row, col);
+                    if (result.success) {
+                        this.onMoveSuccess(piece, result);
+                    } else {
+                        this.returnToOriginal(gameObject);
+                    }
                 } else {
                     this.returnToOriginal(gameObject);
                 }
-            } else {
-                this.returnToOriginal(gameObject);
+
+                this.clearHighlights();
             }
 
-            this.clearHighlights();
             this.draggedPiece = null;
         });
 
         // Click to select
         this.input.on('pointerdown', (pointer) => {
+            // Only process clicks within the board area
+            const boardLeft = BOARD_OFFSET;
+            const boardRight = BOARD_OFFSET + BOARD_SIZE * TILE_SIZE;
+            const boardTop = BOARD_OFFSET;
+            const boardBottom = BOARD_OFFSET + BOARD_SIZE * TILE_SIZE;
+
+            if (pointer.x < boardLeft || pointer.x >= boardRight ||
+                pointer.y < boardTop || pointer.y >= boardBottom) {
+                // Click is outside the board, ignore for piece selection
+                return;
+            }
+
             const col = Math.floor((pointer.x - BOARD_OFFSET) / TILE_SIZE);
             const row = Math.floor((pointer.y - BOARD_OFFSET) / TILE_SIZE);
 
