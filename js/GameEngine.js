@@ -897,7 +897,7 @@ class GameEngine {
                     production: p.production || null,
                     productionProgress: p.productionProgress || 0,
                     productionPaused: false,
-                    repeatProduction: false
+                    repeatProduction: true
                 };
                 this.pieces.push(piece);
                 this.board[piece.row][piece.col] = piece;
