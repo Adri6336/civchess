@@ -423,8 +423,8 @@ class CivChessAI {
         const targetStrength = this.engine.getPlayerStrength(this.invasionTarget);
         const techDiff = targetStrength ? targetStrength.breakdown.techLevel - this.gameState.techLevel : 0;
 
-        // Need 2x warriors, adjusted for tech difference
-        const requiredRatio = 2 + techDiff;
+        // Need 1.3x warriors, adjusted for tech difference
+        const requiredRatio = 1.3 + techDiff;
 
         if (relStrength.militaryRatio >= requiredRatio) {
             // We're ready to attack
