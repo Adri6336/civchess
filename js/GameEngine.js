@@ -231,6 +231,11 @@ class GameEngine {
             }
         }
 
+        // Check for blockade (two warriors on opposite diagonal of a 2x2 square)
+        if (this.isBlockedByBlockade(piece.row, piece.col, targetRow, targetCol)) {
+            return { valid: false, reason: 'Blocked by enemy blockade' };
+        }
+
         // Check for piece collision
         const targetPiece = this.board[targetRow][targetCol];
         if (targetPiece) {
@@ -265,6 +270,46 @@ class GameEngine {
             r += rowDir;
             c += colDir;
         }
+
+        return true;
+    }
+
+    /**
+     * Check if movement is blocked by a blockade.
+     * A blockade forms when two warriors from the same player occupy diagonal
+     * corners of a 2x2 square. Pieces cannot cross between them diagonally.
+     *
+     * Example: Warriors at positions marked W form a blockade:
+     *   W .    or    . W
+     *   . W          W .
+     *
+     * A piece at top-right cannot move to bottom-left (and vice versa) in the first case.
+     * A piece at top-left cannot move to bottom-right (and vice versa) in the second case.
+     */
+    isBlockedByBlockade(fromRow, fromCol, toRow, toCol) {
+        const rowDiff = toRow - fromRow;
+        const colDiff = toCol - fromCol;
+
+        // Only diagonal movements (1 step) can be blocked by a blockade
+        if (Math.abs(rowDiff) !== 1 || Math.abs(colDiff) !== 1) {
+            return false;
+        }
+
+        // For diagonal movement, check if the opposite diagonal of the 2x2 square
+        // has two warriors from the same player (forming a blockade)
+        // The opposite diagonal positions are: (fromRow, toCol) and (toRow, fromCol)
+        const pos1Row = fromRow;
+        const pos1Col = toCol;
+        const pos2Row = toRow;
+        const pos2Col = fromCol;
+
+        const piece1 = this.board[pos1Row]?.[pos1Col];
+        const piece2 = this.board[pos2Row]?.[pos2Col];
+
+        // Both positions must have warriors from the same player
+        if (!piece1 || !piece2) return false;
+        if (piece1.type !== PIECE_TYPES.WARRIOR || piece2.type !== PIECE_TYPES.WARRIOR) return false;
+        if (piece1.ownerId !== piece2.ownerId) return false;
 
         return true;
     }
