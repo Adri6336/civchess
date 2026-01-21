@@ -13,6 +13,8 @@ class GameScene extends Phaser.Scene {
         this.draggedPiece = null;
         this.originalPosition = null;
         this.hasDragged = false;
+        this.aiManager = null;
+        this.isAITurnInProgress = false;
     }
 
     init(data) {
@@ -29,6 +31,17 @@ class GameScene extends Phaser.Scene {
         } else {
             this.engine.setupGame(this.playerConfigs);
         }
+
+        // Initialize AI Manager
+        this.aiManager = new AIManager(this.engine);
+
+        // Register AI players
+        this.engine.players.forEach((player, index) => {
+            if (player.isAI) {
+                // Default to Medium difficulty - could be configurable later
+                this.aiManager.registerAIPlayer(index, AI_DIFFICULTY.MEDIUM);
+            }
+        });
 
         // Create graphics layers
         this.tileGraphics = this.add.graphics();
@@ -63,6 +76,9 @@ class GameScene extends Phaser.Scene {
 
         // Update UI
         this.updateUI();
+
+        // If the first player is AI, start their turn
+        this.checkAndExecuteAITurn();
     }
 
     drawBoard() {
@@ -762,8 +778,23 @@ class GameScene extends Phaser.Scene {
         const currentPlayer = this.engine.getCurrentPlayer();
 
         // Update turn text
-        this.turnText.setText(`Turn: ${currentPlayer.name}`);
+        const aiIndicator = currentPlayer.isAI ? ' (AI)' : '';
+        this.turnText.setText(`Turn: ${currentPlayer.name}${aiIndicator}`);
         this.turnText.setColor(currentPlayer.color.css);
+
+        // Disable Next Turn button during AI turns
+        if (this.nextTurnBtn) {
+            const isAITurn = currentPlayer.isAI || this.isAITurnInProgress;
+            if (isAITurn) {
+                this.nextTurnBtn.disableInteractive();
+                this.nextTurnBtn.bg.setAlpha(0.5);
+                this.nextTurnBtn.label.setAlpha(0.5);
+            } else {
+                this.nextTurnBtn.setInteractive({ useHandCursor: true });
+                this.nextTurnBtn.bg.setAlpha(1);
+                this.nextTurnBtn.label.setAlpha(1);
+            }
+        }
 
         // Update container glow to match current player color
         const container = document.getElementById('game-container');
@@ -1310,15 +1341,139 @@ class GameScene extends Phaser.Scene {
         this.engine.endTurn();
 
         // Refresh pieces (some may have spawned)
+        this.refreshPieceSprites();
+
+        this.drawOwnership();
+        this.updateUI();
+
+        // Check if next player is AI
+        this.checkAndExecuteAITurn();
+    }
+
+    /**
+     * Refresh piece sprites to match engine state
+     */
+    refreshPieceSprites() {
         const existingIds = new Set(this.pieceSprites.keys());
+        const currentPieceIds = new Set(this.engine.pieces.map(p => p.id));
+
+        // Add new pieces
         this.engine.pieces.forEach(piece => {
             if (!existingIds.has(piece.id)) {
                 this.createPieceSprite(piece);
             }
         });
 
+        // Remove destroyed pieces
+        existingIds.forEach(id => {
+            if (!currentPieceIds.has(id)) {
+                const sprite = this.pieceSprites.get(id);
+                if (sprite) {
+                    sprite.destroy();
+                    this.pieceSprites.delete(id);
+                }
+            }
+        });
+
+        // Update all existing pieces
+        this.engine.pieces.forEach(piece => {
+            this.updatePieceSprite(piece);
+        });
+    }
+
+    /**
+     * Check if current player is AI and execute their turn
+     */
+    checkAndExecuteAITurn() {
+        if (this.engine.gameOver) return;
+        if (this.isAITurnInProgress) return;
+
+        const currentPlayer = this.engine.getCurrentPlayer();
+        if (currentPlayer.isAI && this.aiManager.isAIPlayer(this.engine.currentPlayerIndex)) {
+            this.isAITurnInProgress = true;
+
+            // Small delay before AI starts to make it feel more natural
+            this.time.delayedCall(500, () => {
+                this.executeAITurn();
+            });
+        }
+    }
+
+    /**
+     * Execute the AI turn with visual feedback
+     */
+    executeAITurn() {
+        const playerId = this.engine.currentPlayerIndex;
+        console.log(`[GameScene] Executing AI turn for player ${playerId}`);
+
+        // Execute the AI turn
+        const actions = this.aiManager.executeAITurn(playerId);
+
+        // Animate the actions with delays
+        this.animateAIActions(actions, 0, () => {
+            // After all actions are animated, end the turn
+            this.time.delayedCall(300, () => {
+                this.isAITurnInProgress = false;
+
+                // Refresh visuals
+                this.refreshPieceSprites();
+                this.drawOwnership();
+                this.updateUI();
+
+                // End turn and check for next AI
+                this.engine.endTurn();
+                this.refreshPieceSprites();
+                this.drawOwnership();
+                this.updateUI();
+
+                // Check if next player is also AI
+                this.checkAndExecuteAITurn();
+            });
+        });
+    }
+
+    /**
+     * Animate AI actions sequentially
+     */
+    animateAIActions(actions, index, onComplete) {
+        if (index >= actions.length) {
+            onComplete();
+            return;
+        }
+
+        const action = actions[index];
+        const delay = this.getActionAnimationDelay(action);
+
+        // Update visuals for this action
+        this.refreshPieceSprites();
         this.drawOwnership();
         this.updateUI();
+
+        // Move to next action after delay
+        this.time.delayedCall(delay, () => {
+            this.animateAIActions(actions, index + 1, onComplete);
+        });
+    }
+
+    /**
+     * Get animation delay for an action type
+     */
+    getActionAnimationDelay(action) {
+        switch (action.type) {
+            case AI_ACTION_TYPE.MOVE_UNIT:
+            case AI_ACTION_TYPE.ATTACK:
+                return 400;
+            case AI_ACTION_TYPE.BUILD_CITY:
+                return 600;
+            case AI_ACTION_TYPE.DECLARE_WAR:
+            case AI_ACTION_TYPE.PROPOSE_PEACE:
+            case AI_ACTION_TYPE.ACCEPT_PEACE:
+                return 300;
+            case AI_ACTION_TYPE.SET_PRODUCTION:
+                return 100;
+            default:
+                return 200;
+        }
     }
 
     showVictoryScreen() {
