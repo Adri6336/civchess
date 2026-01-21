@@ -803,8 +803,233 @@ class CivChessAI {
         return Math.max(Math.abs(from.row - to.row), Math.abs(from.col - to.col));
     }
 
+    // Manhattan distance for settler pathfinding (orthogonal movement only)
+    getManhattanDistance(from, to) {
+        return Math.abs(from.row - to.row) + Math.abs(from.col - to.col);
+    }
+
     findPiece(pieceId) {
         return this.engine.pieces.find(p => p.id === pieceId);
+    }
+
+    // ========================================
+    // A* PATHFINDING FOR SETTLERS
+    // ========================================
+
+    /**
+     * Find the best first move for a settler to reach the target using A*.
+     * Returns the first step of the shortest path, or null if no path exists.
+     * Uses Manhattan distance as heuristic (admissible for orthogonal movement).
+     */
+    findSettlerPathAStar(settler, target) {
+        const startKey = `${settler.row},${settler.col}`;
+        const targetKey = `${target.row},${target.col}`;
+
+        if (startKey === targetKey) return null; // Already there
+
+        // Priority queue using array with insertion sort (simple but effective for small boards)
+        // Each entry: { row, col, firstMove, gCost, fCost }
+        // gCost = actual cost from start, fCost = gCost + heuristic
+        const openSet = [];
+        const gCosts = new Map(); // Best g cost to reach each position
+        gCosts.set(startKey, 0);
+
+        // Get initial valid moves and add to open set
+        const initialMoves = this.engine.getValidMoves(settler);
+        for (const move of initialMoves) {
+            const moveKey = `${move.row},${move.col}`;
+            if (moveKey === targetKey) {
+                return move; // Can reach target directly
+            }
+            const gCost = 1; // Each move costs 1 turn
+            const hCost = this.getManhattanDistance(move, target);
+            const fCost = gCost + hCost;
+
+            gCosts.set(moveKey, gCost);
+            this.insertIntoOpenSet(openSet, {
+                row: move.row,
+                col: move.col,
+                firstMove: move,
+                gCost: gCost,
+                fCost: fCost
+            });
+        }
+
+        // A* search
+        while (openSet.length > 0) {
+            // Get node with lowest fCost (first element due to sorted insertion)
+            const current = openSet.shift();
+            const currentKey = `${current.row},${current.col}`;
+
+            // Generate possible settler moves from current position
+            const possibleMoves = this.getSettlerMovesFrom(current.row, current.col);
+
+            for (const nextPos of possibleMoves) {
+                const nextKey = `${nextPos.row},${nextPos.col}`;
+                const tentativeG = current.gCost + 1;
+
+                // Skip if we've found a better path to this node already
+                if (gCosts.has(nextKey) && tentativeG >= gCosts.get(nextKey)) {
+                    continue;
+                }
+
+                // This is a better path
+                gCosts.set(nextKey, tentativeG);
+
+                if (nextKey === targetKey) {
+                    return current.firstMove; // Found path, return first move
+                }
+
+                const hCost = this.getManhattanDistance(nextPos, target);
+                const fCost = tentativeG + hCost;
+
+                this.insertIntoOpenSet(openSet, {
+                    row: nextPos.row,
+                    col: nextPos.col,
+                    firstMove: current.firstMove,
+                    gCost: tentativeG,
+                    fCost: fCost
+                });
+            }
+        }
+
+        return null; // No path found
+    }
+
+    /**
+     * Insert a node into the open set maintaining sorted order by fCost.
+     * Uses binary search for O(log n) insertion position finding.
+     */
+    insertIntoOpenSet(openSet, node) {
+        // Binary search for insertion position
+        let low = 0;
+        let high = openSet.length;
+
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (openSet[mid].fCost < node.fCost) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        openSet.splice(low, 0, node);
+    }
+
+    /**
+     * Get all possible settler moves from a given position (for BFS exploration).
+     * Simulates settler movement rules: up to 3 tiles orthogonally.
+     */
+    getSettlerMovesFrom(row, col) {
+        const moves = [];
+        const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]]; // Orthogonal only
+
+        for (const [dr, dc] of directions) {
+            for (let dist = 1; dist <= 3; dist++) {
+                const newRow = row + dr * dist;
+                const newCol = col + dc * dist;
+
+                // Check bounds
+                if (newRow < 0 || newRow >= BOARD_SIZE || newCol < 0 || newCol >= BOARD_SIZE) {
+                    break; // Can't go further in this direction
+                }
+
+                // Check if tile is occupied (blocking further movement)
+                const piece = this.engine.board[newRow][newCol];
+                if (piece) {
+                    // Can't pass through or land on occupied tiles
+                    break;
+                }
+
+                moves.push({ row: newRow, col: newCol });
+            }
+        }
+
+        return moves;
+    }
+
+    /**
+     * Check if a position is a good city spot for our settlers
+     */
+    isSettleableTile(row, col) {
+        return this.expansionHeatmap[row][col] > 0 &&
+               this.engine.tileOwnership[row][col] === this.playerId;
+    }
+
+    /**
+     * Check if we have settlers that need paths cleared
+     */
+    getActiveSettlers() {
+        return this.gameState.ownPieces.settlers.filter(s => {
+            const engineSettler = this.engine.pieces.find(p => p.id === s.id);
+            return engineSettler && !engineSettler.hasMoved;
+        });
+    }
+
+    /**
+     * Check if a warrior is blocking a settler's path to their destination
+     */
+    isBlockingSettlerPath(warrior) {
+        const settlers = this.getActiveSettlers();
+        if (settlers.length === 0) return false;
+
+        for (const settler of settlers) {
+            const validSpots = this.findValidCitySpots();
+            const engineSettler = this.engine.pieces.find(p => p.id === settler.id);
+            if (!engineSettler) continue;
+
+            for (const spot of validSpots) {
+                // Check if warrior is in the orthogonal path between settler and spot
+                if (this.isInOrthogonalPath(warrior, engineSettler, spot)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a position is in the orthogonal path between settler and target
+     */
+    isInOrthogonalPath(pos, settler, target) {
+        // Check horizontal path
+        if (pos.row === settler.row && pos.row === target.row) {
+            const minCol = Math.min(settler.col, target.col);
+            const maxCol = Math.max(settler.col, target.col);
+            if (pos.col > minCol && pos.col < maxCol) return true;
+        }
+
+        // Check vertical path
+        if (pos.col === settler.col && pos.col === target.col) {
+            const minRow = Math.min(settler.row, target.row);
+            const maxRow = Math.max(settler.row, target.row);
+            if (pos.row > minRow && pos.row < maxRow) return true;
+        }
+
+        // Check if in L-shaped path (horizontal then vertical or vice versa)
+        // Path 1: settler -> (settler.row, target.col) -> target
+        if ((pos.row === settler.row &&
+             ((pos.col > settler.col && pos.col <= target.col) ||
+              (pos.col < settler.col && pos.col >= target.col))) ||
+            (pos.col === target.col &&
+             ((pos.row > settler.row && pos.row <= target.row) ||
+              (pos.row < settler.row && pos.row >= target.row)))) {
+            return true;
+        }
+
+        // Path 2: settler -> (target.row, settler.col) -> target
+        if ((pos.col === settler.col &&
+             ((pos.row > settler.row && pos.row <= target.row) ||
+              (pos.row < settler.row && pos.row >= target.row))) ||
+            (pos.row === target.row &&
+             ((pos.col > settler.col && pos.col <= target.col) ||
+              (pos.col < settler.col && pos.col >= target.col)))) {
+            return true;
+        }
+
+        return false;
     }
 
     // ========================================
@@ -983,6 +1208,21 @@ class CivChessAI {
             return this.attackTarget(warrior, target);
         }
 
+        // Check if warrior should move out of the way for settlers
+        const settlerClearMove = this.shouldClearForSettler(warrior);
+        if (settlerClearMove) {
+            const result = this.engine.movePiece(warrior, settlerClearMove.row, settlerClearMove.col);
+            if (result.success) {
+                return {
+                    type: result.combat ? AI_ACTION_TYPE.ATTACK : AI_ACTION_TYPE.MOVE_UNIT,
+                    pieceId: warrior.id,
+                    from: { row: warrior.row, col: warrior.col },
+                    to: settlerClearMove,
+                    combat: result.combat
+                };
+            }
+        }
+
         // Get objective
         const objective = this.warriorObjectives.get(warrior.id);
         if (!objective) {
@@ -1000,6 +1240,83 @@ class CivChessAI {
 
         // Move toward objective
         return this.moveTowardTarget(warrior, objective.target);
+    }
+
+    /**
+     * Check if warrior should move to clear the way for settlers.
+     * Returns a move that clears the path, or null if not needed.
+     */
+    shouldClearForSettler(warrior) {
+        const settlers = this.getActiveSettlers();
+        if (settlers.length === 0) return null;
+
+        const onSettleableTile = this.isSettleableTile(warrior.row, warrior.col);
+        const blockingPath = this.isBlockingSettlerPath(warrior);
+
+        // Only move if actually in the way
+        if (!onSettleableTile && !blockingPath) return null;
+
+        const validMoves = this.engine.getValidMoves(warrior);
+        if (validMoves.length === 0) return null;
+
+        // Find a move that:
+        // 1. Is not on a settleable tile
+        // 2. Doesn't block settler paths
+        // 3. Preferably moves toward the warrior's objective
+        const objective = this.warriorObjectives.get(warrior.id);
+
+        let bestMove = null;
+        let bestScore = -Infinity;
+
+        for (const move of validMoves) {
+            // Skip if this move puts us on another settleable tile
+            if (this.isSettleableTile(move.row, move.col)) continue;
+
+            // Skip if move would still block a settler path
+            const wouldBlock = this.wouldBlockSettlerPath(move, settlers);
+            if (wouldBlock) continue;
+
+            let score = 0;
+
+            // Bonus if moving toward objective
+            if (objective) {
+                const currentDist = this.getDistance(warrior, objective.target);
+                const newDist = this.getDistance(move, objective.target);
+                score += (currentDist - newDist) * 2;
+            }
+
+            // Bonus for positions with good wall/defense value
+            score += this.calculateWallScore(move.row, move.col) * 0.5;
+
+            // Slight bonus for not moving too far from current position
+            // (prefer smaller adjustments)
+            score -= this.getDistance(warrior, move) * 0.2;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestMove = move;
+            }
+        }
+
+        return bestMove;
+    }
+
+    /**
+     * Check if a potential move would block any settler's path
+     */
+    wouldBlockSettlerPath(pos, settlers) {
+        for (const settler of settlers) {
+            const validSpots = this.findValidCitySpots();
+            const engineSettler = this.engine.pieces.find(p => p.id === settler.id);
+            if (!engineSettler) continue;
+
+            for (const spot of validSpots) {
+                if (this.isInOrthogonalPath(pos, engineSettler, spot)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     getAdjacentEnemies(warrior) {
@@ -1176,45 +1493,61 @@ class CivChessAI {
             return this.moveSettlerToExpand(settler);
         }
 
-        // Find closest valid spot
-        let bestSpot = null;
-        let minDist = Infinity;
+        // Sort spots by a combination of distance and value
+        // Prioritize closer spots but also consider high-value locations
+        const scoredSpots = validSpots.map(spot => ({
+            ...spot,
+            distance: this.getManhattanDistance(settler, spot),
+            score: spot.value / (this.getManhattanDistance(settler, spot) + 1)
+        })).sort((a, b) => b.score - a.score);
 
-        for (const spot of validSpots) {
-            const dist = this.getDistance(settler, spot);
-            if (dist < minDist) {
-                minDist = dist;
-                bestSpot = spot;
+        // Try BFS pathfinding for each spot until we find one with a valid path
+        for (const spot of scoredSpots) {
+            const bestMove = this.findSettlerPathAStar(settler, spot);
+            if (bestMove) {
+                const result = this.engine.movePiece(settler, bestMove.row, bestMove.col);
+                if (result.success) {
+                    return {
+                        type: AI_ACTION_TYPE.MOVE_UNIT,
+                        pieceId: settler.id,
+                        from: { row: settler.row, col: settler.col },
+                        to: bestMove
+                    };
+                }
             }
         }
 
-        if (!bestSpot) return null;
-
-        // Move toward the spot
+        // Fallback: greedy approach if BFS fails (shouldn't happen often)
         const validMoves = this.engine.getValidMoves(settler);
         if (validMoves.length === 0) return null;
 
+        // Try any move that makes progress toward any valid spot
         let bestMove = null;
-        let bestMoveDist = Infinity;
+        let bestProgress = -Infinity;
 
         for (const move of validMoves) {
-            const dist = this.getDistance(move, bestSpot);
-            if (dist < bestMoveDist) {
-                bestMoveDist = dist;
-                bestMove = move;
+            for (const spot of validSpots) {
+                const currentDist = this.getManhattanDistance(settler, spot);
+                const newDist = this.getManhattanDistance(move, spot);
+                const progress = currentDist - newDist;
+
+                if (progress > bestProgress) {
+                    bestProgress = progress;
+                    bestMove = move;
+                }
             }
         }
 
-        if (!bestMove || bestMoveDist >= minDist) return null;
-
-        const result = this.engine.movePiece(settler, bestMove.row, bestMove.col);
-        if (result.success) {
-            return {
-                type: AI_ACTION_TYPE.MOVE_UNIT,
-                pieceId: settler.id,
-                from: { row: settler.row, col: settler.col },
-                to: bestMove
-            };
+        if (bestMove && bestProgress > 0) {
+            const result = this.engine.movePiece(settler, bestMove.row, bestMove.col);
+            if (result.success) {
+                return {
+                    type: AI_ACTION_TYPE.MOVE_UNIT,
+                    pieceId: settler.id,
+                    from: { row: settler.row, col: settler.col },
+                    to: bestMove
+                };
+            }
         }
 
         return null;
@@ -1235,34 +1568,59 @@ class CivChessAI {
 
         if (potentialSpots.length === 0) return null;
 
-        // Sort by value and pick best
-        potentialSpots.sort((a, b) => b.value - a.value);
-        const target = potentialSpots[0];
+        // Score spots by value and distance
+        const scoredSpots = potentialSpots.map(spot => ({
+            ...spot,
+            distance: this.getManhattanDistance(settler, spot),
+            score: spot.value / (this.getManhattanDistance(settler, spot) + 1)
+        })).sort((a, b) => b.score - a.score);
 
+        // Try BFS pathfinding for each potential spot
+        for (const spot of scoredSpots) {
+            const bestMove = this.findSettlerPathAStar(settler, spot);
+            if (bestMove) {
+                const result = this.engine.movePiece(settler, bestMove.row, bestMove.col);
+                if (result.success) {
+                    return {
+                        type: AI_ACTION_TYPE.MOVE_UNIT,
+                        pieceId: settler.id,
+                        from: { row: settler.row, col: settler.col },
+                        to: bestMove
+                    };
+                }
+            }
+        }
+
+        // Fallback: greedy move toward best spot
         const validMoves = this.engine.getValidMoves(settler);
         if (validMoves.length === 0) return null;
 
         let bestMove = null;
-        let bestDist = Infinity;
+        let bestProgress = -Infinity;
 
         for (const move of validMoves) {
-            const dist = this.getDistance(move, target);
-            if (dist < bestDist) {
-                bestDist = dist;
-                bestMove = move;
+            for (const spot of scoredSpots.slice(0, 3)) { // Check top 3 spots
+                const currentDist = this.getManhattanDistance(settler, spot);
+                const newDist = this.getManhattanDistance(move, spot);
+                const progress = currentDist - newDist;
+
+                if (progress > bestProgress) {
+                    bestProgress = progress;
+                    bestMove = move;
+                }
             }
         }
 
-        if (!bestMove) return null;
-
-        const result = this.engine.movePiece(settler, bestMove.row, bestMove.col);
-        if (result.success) {
-            return {
-                type: AI_ACTION_TYPE.MOVE_UNIT,
-                pieceId: settler.id,
-                from: { row: settler.row, col: settler.col },
-                to: bestMove
-            };
+        if (bestMove && bestProgress > 0) {
+            const result = this.engine.movePiece(settler, bestMove.row, bestMove.col);
+            if (result.success) {
+                return {
+                    type: AI_ACTION_TYPE.MOVE_UNIT,
+                    pieceId: settler.id,
+                    from: { row: settler.row, col: settler.col },
+                    to: bestMove
+                };
+            }
         }
 
         return null;
