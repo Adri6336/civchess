@@ -718,9 +718,9 @@ class GameScene extends Phaser.Scene {
 
         const piece = this.selectedPiece.pieceData;
         const owner = this.engine.players[piece.ownerId];
+        console.log(piece.type)
 
         let info = `Type: ${piece.type}\n`;
-        info += `Owner: ${owner.name}\n`;
         info += `HP: ${piece.hp}/${piece.maxHp}\n`;
 
         if (piece.type === PIECE_TYPES.WARRIOR) {
