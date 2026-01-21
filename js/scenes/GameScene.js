@@ -765,6 +765,12 @@ class GameScene extends Phaser.Scene {
         this.turnText.setText(`Turn: ${currentPlayer.name}`);
         this.turnText.setColor(currentPlayer.color.css);
 
+        // Update container glow to match current player color
+        const container = document.getElementById('game-container');
+        if (container) {
+            container.style.boxShadow = `0 0 30px ${currentPlayer.color.css}50`;
+        }
+
         // Update tech text
         this.techText.setText(`Tech: ${currentPlayer.techScore}`);
 
