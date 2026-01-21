@@ -308,10 +308,11 @@ class GameEngine {
         }
 
         const targetPiece = this.board[targetRow][targetCol];
+        let combatResult = null;
 
         // Handle combat
         if (targetPiece && piece.type === PIECE_TYPES.WARRIOR) {
-            const combatResult = this.resolveCombat(piece, targetPiece);
+            combatResult = this.resolveCombat(piece, targetPiece);
             if (!combatResult.attackerSurvived) {
                 return { success: true, combat: combatResult };
             }
@@ -336,7 +337,12 @@ class GameEngine {
         }
 
         this.log('MOVE', { piece: piece.id, to: { row: targetRow, col: targetCol } });
-        return { success: true };
+
+        const result = { success: true };
+        if (combatResult) {
+            result.combat = combatResult;
+        }
+        return result;
     }
 
     resolveCombat(attacker, defender) {

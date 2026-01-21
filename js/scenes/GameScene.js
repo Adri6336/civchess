@@ -285,11 +285,22 @@ class GameScene extends Phaser.Scene {
     removePieceSprite(pieceId) {
         const sprite = this.pieceSprites.get(pieceId);
         if (sprite) {
+            // Random direction for the "fling" effect
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 100 + Math.random() * 100;
+            const targetX = sprite.x + Math.cos(angle) * distance;
+            const targetY = sprite.y + Math.sin(angle) * distance + 200; // Add gravity effect
+            const rotation = (Math.random() - 0.5) * Math.PI * 4; // Random spin
+
             this.tweens.add({
                 targets: sprite,
+                x: targetX,
+                y: targetY,
                 alpha: 0,
-                scale: 0.5,
-                duration: 300,
+                scale: 0.2,
+                rotation: rotation,
+                duration: 1500,
+                ease: 'Quad.easeOut',
                 onComplete: () => {
                     sprite.destroy();
                     this.pieceSprites.delete(pieceId);
