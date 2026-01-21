@@ -46,7 +46,8 @@ class GameEngine {
                 name: `Player ${index + 1}`,
                 color: config.color,
                 techScore: 0,
-                isHuman: true,
+                isHuman: !config.isAI,
+                isAI: config.isAI || false,
                 relations: {} // will be filled with peace/war status
             });
         });

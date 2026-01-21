@@ -4,7 +4,8 @@
 class MenuScene extends Phaser.Scene {
     constructor() {
         super({ key: 'MenuScene' });
-        this.selectedPlayers = 2;
+        this.humanPlayers = 2;
+        this.aiPlayers = 0;
         this.selectedColorIndex = 0;
         this.showingMainMenu = true;
         this.mainMenuElements = [];
@@ -132,8 +133,7 @@ class MenuScene extends Phaser.Scene {
         const mobile = config.mobile;
 
         const titleSize = mobile ? '32px' : '48px';
-        const labelSize = mobile ? '18px' : '24px';
-        const instructionSize = mobile ? '11px' : '14px';
+        const labelSize = mobile ? '16px' : '20px';
         const spacing = mobile ? 0.7 : 1;
 
         let y = mobile ? 40 : 80;
@@ -156,30 +156,54 @@ class MenuScene extends Phaser.Scene {
 
         y += 30 * spacing;
 
-        // Player count selection
-        const playerLabel = this.add.text(centerX, y, 'Number of Players:', {
+        // Human player count selection
+        const humanLabel = this.add.text(centerX, y, 'Human Players (Hotseat):', {
             fontSize: labelSize,
             color: COLORS.textPrimary
         }).setOrigin(0.5);
-        this.newGameElements.push(playerLabel);
+        this.newGameElements.push(humanLabel);
 
-        y += 40 * spacing;
+        y += 35 * spacing;
 
-        // Player count buttons
-        this.playerButtons = [];
-        const btnSpacing = mobile ? 60 : 80;
-        for (let i = 2; i <= 4; i++) {
-            const btnX = centerX + (i - 3) * btnSpacing;
+        // Human player count buttons (0-4)
+        this.humanButtons = [];
+        const btnSpacing = mobile ? 50 : 60;
+        for (let i = 0; i <= 4; i++) {
+            const btnX = centerX + (i - 2) * btnSpacing;
             const btn = this.createButton(btnX, y, `${i}`, () => {
-                this.selectedPlayers = i;
-                this.updatePlayerButtons();
-            }, mobile ? 50 : 60, mobile ? 35 : 40);
-            this.playerButtons.push({ btn, value: i });
+                this.setHumanPlayers(i);
+            }, mobile ? 40 : 50, mobile ? 32 : 38);
+            this.humanButtons.push({ btn, value: i });
             this.newGameElements.push(btn);
         }
-        this.updatePlayerButtons();
 
-        y += 60 * spacing;
+        y += 55 * spacing;
+
+        // AI player count selection
+        const aiLabel = this.add.text(centerX, y, 'AI Players:', {
+            fontSize: labelSize,
+            color: COLORS.textPrimary
+        }).setOrigin(0.5);
+        this.newGameElements.push(aiLabel);
+
+        y += 35 * spacing;
+
+        // AI player count buttons (0-4)
+        this.aiButtons = [];
+        for (let i = 0; i <= 4; i++) {
+            const btnX = centerX + (i - 2) * btnSpacing;
+            const btn = this.createButton(btnX, y, `${i}`, () => {
+                this.setAIPlayers(i);
+            }, mobile ? 40 : 50, mobile ? 32 : 38);
+            this.aiButtons.push({ btn, value: i });
+            this.newGameElements.push(btn);
+        }
+
+        // Update button states
+        this.updateHumanButtons();
+        this.updateAIButtons();
+
+        y += 55 * spacing;
 
         // Color selection
         const colorLabel = this.add.text(centerX, y, 'Your Color:', {
@@ -188,7 +212,7 @@ class MenuScene extends Phaser.Scene {
         }).setOrigin(0.5);
         this.newGameElements.push(colorLabel);
 
-        y += 40 * spacing;
+        y += 35 * spacing;
 
         // Color swatches
         this.colorSwatches = [];
@@ -210,37 +234,74 @@ class MenuScene extends Phaser.Scene {
         });
         this.updateColorSwatches();
 
-        y += 70 * spacing;
+        y += 60 * spacing;
 
         // Play button
         const playBtn = this.createButton(centerX, y, 'PLAY', () => {
             this.startGame();
         }, mobile ? 120 : 150, mobile ? 40 : 50);
         this.newGameElements.push(playBtn);
+    }
 
-        y += 60 * spacing;
+    /**
+     * Set number of human players and auto-adjust AI count if needed
+     */
+    setHumanPlayers(count) {
+        this.humanPlayers = count;
+        const total = this.humanPlayers + this.aiPlayers;
 
-        // Instructions - shorter on mobile
-        const instructions = mobile ? [
-            'Cities - Build units & territory',
-            'Warriors - Move 1, attack',
-            'Settlers - Move 3, found cities',
-            'Capture all cities to win!'
-        ] : [
-            'Cities (Rooks) - Build units and expand territory',
-            'Warriors (Pawns) - Move 1 tile, attack enemies',
-            'Settlers (Knights) - Move 3 tiles, found new cities',
-            '',
-            'First to capture all cities wins!'
-        ];
+        if (total > 4) {
+            // Reduce AI players to fit
+            this.aiPlayers = 4 - this.humanPlayers;
+        } else if (total < 2) {
+            // Increase AI players to meet minimum
+            this.aiPlayers = 2 - this.humanPlayers;
+        }
 
-        const lineSpacing = mobile ? 18 : 25;
-        instructions.forEach((text, i) => {
-            const instr = this.add.text(centerX, y + i * lineSpacing, text, {
-                fontSize: instructionSize,
-                color: COLORS.textSecondary
-            }).setOrigin(0.5);
-            this.newGameElements.push(instr);
+        this.updateHumanButtons();
+        this.updateAIButtons();
+    }
+
+    /**
+     * Set number of AI players and auto-adjust human count if needed
+     */
+    setAIPlayers(count) {
+        this.aiPlayers = count;
+        const total = this.humanPlayers + this.aiPlayers;
+
+        if (total > 4) {
+            // Reduce human players to fit
+            this.humanPlayers = 4 - this.aiPlayers;
+        } else if (total < 2) {
+            // Increase human players to meet minimum
+            this.humanPlayers = 2 - this.aiPlayers;
+        }
+
+        this.updateHumanButtons();
+        this.updateAIButtons();
+    }
+
+    updateHumanButtons() {
+        this.humanButtons.forEach(({ btn, value }) => {
+            if (value === this.humanPlayers) {
+                btn.selected = true;
+                btn.bg.setFillStyle(0x00aa00);
+            } else {
+                btn.selected = false;
+                btn.bg.setFillStyle(0x4a4a6a);
+            }
+        });
+    }
+
+    updateAIButtons() {
+        this.aiButtons.forEach(({ btn, value }) => {
+            if (value === this.aiPlayers) {
+                btn.selected = true;
+                btn.bg.setFillStyle(0x00aa00);
+            } else {
+                btn.selected = false;
+                btn.bg.setFillStyle(0x4a4a6a);
+            }
         });
     }
 
@@ -617,18 +678,6 @@ class MenuScene extends Phaser.Scene {
         return container;
     }
 
-    updatePlayerButtons() {
-        this.playerButtons.forEach(({ btn, value }) => {
-            if (value === this.selectedPlayers) {
-                btn.selected = true;
-                btn.bg.setFillStyle(0x00aa00);
-            } else {
-                btn.selected = false;
-                btn.bg.setFillStyle(0x4a4a6a);
-            }
-        });
-    }
-
     updateColorSwatches() {
         this.colorSwatches.forEach(({ swatch, index }) => {
             if (index === this.selectedColorIndex) {
@@ -642,22 +691,43 @@ class MenuScene extends Phaser.Scene {
     }
 
     startGame() {
-        // Prepare player configs
+        const totalPlayers = this.humanPlayers + this.aiPlayers;
         const playerConfigs = [];
         const usedColors = new Set();
 
-        // Human player gets their selected color
-        playerConfigs.push({ color: PLAYER_COLORS[this.selectedColorIndex] });
-        usedColors.add(this.selectedColorIndex);
+        // First human player gets their selected color (if there are any humans)
+        if (this.humanPlayers > 0) {
+            playerConfigs.push({
+                color: PLAYER_COLORS[this.selectedColorIndex],
+                isAI: false
+            });
+            usedColors.add(this.selectedColorIndex);
+        }
 
-        // Other players get random colors
-        for (let i = 1; i < this.selectedPlayers; i++) {
+        // Additional human players get random colors
+        for (let i = 1; i < this.humanPlayers; i++) {
             let colorIndex;
             do {
                 colorIndex = Math.floor(Math.random() * PLAYER_COLORS.length);
             } while (usedColors.has(colorIndex));
             usedColors.add(colorIndex);
-            playerConfigs.push({ color: PLAYER_COLORS[colorIndex] });
+            playerConfigs.push({
+                color: PLAYER_COLORS[colorIndex],
+                isAI: false
+            });
+        }
+
+        // AI players get random colors
+        for (let i = 0; i < this.aiPlayers; i++) {
+            let colorIndex;
+            do {
+                colorIndex = Math.floor(Math.random() * PLAYER_COLORS.length);
+            } while (usedColors.has(colorIndex));
+            usedColors.add(colorIndex);
+            playerConfigs.push({
+                color: PLAYER_COLORS[colorIndex],
+                isAI: true
+            });
         }
 
         this.scene.start('GameScene', { playerConfigs });
