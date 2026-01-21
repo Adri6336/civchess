@@ -316,8 +316,8 @@ class GameEngine {
             if (!combatResult.attackerSurvived) {
                 return { success: true, combat: combatResult };
             }
-            // If defender survived and wasn't captured, attacker bounces back
-            if (!combatResult.defenderDestroyed && !combatResult.cityFlipped) {
+            // If defender survived OR city was captured, attacker stays at original position
+            if (!combatResult.defenderDestroyed || combatResult.cityFlipped) {
                 piece.hasMoved = true;
                 return {
                     success: true,

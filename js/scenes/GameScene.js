@@ -1010,6 +1010,9 @@ class GameScene extends Phaser.Scene {
         const defenderPiece = this.engine.board[result.targetPos.row][result.targetPos.col];
         const defenderSprite = defenderPiece ? this.pieceSprites.get(defenderPiece.id) : null;
 
+        // Check if this is a city capture
+        const isCityCapture = result.combat && result.combat.cityFlipped;
+
         // Animate attacker moving toward target then bouncing back
         this.tweens.add({
             targets: attackerSprite,
@@ -1028,7 +1031,19 @@ class GameScene extends Phaser.Scene {
                     onComplete: () => {
                         // Update UI after animation completes
                         this.updatePieceSprite(attackerPiece);
-                        if (defenderPiece) {
+
+                        // Handle city capture: delete old sprite and create new one for new owner
+                        if (isCityCapture && defenderPiece) {
+                            const oldSpriteId = defenderPiece.id;
+                            const oldSprite = this.pieceSprites.get(oldSpriteId);
+                            if (oldSprite) {
+                                oldSprite.destroy();
+                                this.pieceSprites.delete(oldSpriteId);
+                            }
+                            // Create new sprite for the captured city (now owned by attacker)
+                            this.createPieceSprite(defenderPiece);
+                            this.drawOwnership();
+                        } else if (defenderPiece) {
                             this.updatePieceSprite(defenderPiece);
                         }
                         this.updateUI();
