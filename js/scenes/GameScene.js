@@ -190,7 +190,40 @@ class GameScene extends Phaser.Scene {
         container.bgCircle = bg;
         container.pieceText = text;
 
+        // Apply grayscale if piece has already moved
+        if (piece.hasMoved) {
+            this.applyGrayscale(container);
+        }
+
         this.pieceSprites.set(piece.id, container);
+    }
+
+    applyGrayscale(container) {
+        if (container.isGrayscale) return;
+        container.isGrayscale = true;
+
+        // Apply grayscale using PostFX color matrix (WebGL only)
+        if (container.postFX) {
+            container.grayscaleFX = container.postFX.addColorMatrix();
+            container.grayscaleFX.grayscale(1);
+        } else {
+            // Fallback: reduce alpha for Canvas renderer
+            container.setAlpha(0.5);
+        }
+    }
+
+    removeGrayscale(container) {
+        if (!container.isGrayscale) return;
+        container.isGrayscale = false;
+
+        // Remove grayscale effect
+        if (container.postFX && container.grayscaleFX) {
+            container.postFX.remove(container.grayscaleFX);
+            container.grayscaleFX = null;
+        } else {
+            // Fallback: restore alpha
+            container.setAlpha(1);
+        }
     }
 
     updatePieceSprite(piece) {
@@ -239,6 +272,13 @@ class GameScene extends Phaser.Scene {
             } else {
                 sprite.prodIndicator.setVisible(false);
             }
+        }
+
+        // Update grayscale based on movement state
+        if (piece.hasMoved) {
+            this.applyGrayscale(sprite);
+        } else {
+            this.removeGrayscale(sprite);
         }
     }
 
