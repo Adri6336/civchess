@@ -1,11 +1,11 @@
 // ============================================
-// AI SYSTEM - Goal-Based Architecture
+// AI SYSTEM - Personality-Based Architecture
 // ============================================
-// The AI uses a goal-based approach where:
-// 1. Goals are explicit objectives (found city, capture city, defend, etc.)
-// 2. Units are assigned to goals and move together toward objectives
-// 3. Production aligns with current goals (need warriors? build them!)
-// 4. Strategy determines which goals to prioritize
+// The AI uses a personality-driven approach where:
+// 1. Each AI is randomly assigned MILITARISTIC or EXPANSIONIST personality
+// 2. Militaristic: builds armies, researches tech, declares war, conquers
+// 3. Expansionist: maintains comparable army, expands territory, builds cities
+// 4. Production is reevaluated whenever a project completes
 // ============================================
 
 // ============================================
@@ -15,37 +15,12 @@
 const AI_DIFFICULTY = {
     EASY: 'easy',
     MEDIUM: 'medium',
-    HARD: 'hard',
-    EXPERIMENTAL: 'experimental'
+    HARD: 'hard'
 };
 
-const AI_STRATEGY = {
-    EXPANSION: 'expansion',
-    RESEARCH: 'research',
-    MILITARIZATION: 'militarization',
-    DEFENSIVE: 'defensive'
-};
-
-/**
- * AI Goals - Explicit objectives the AI pursues
- */
-const AI_GOAL = {
-    // Expansion goals
-    FOUND_CITY: 'found_city',           // Send settler to location and build city
-    EXPAND_TERRITORY: 'expand_territory', // Use diplomacy to grow borders
-
-    // Military goals
-    CAPTURE_CITY: 'capture_city',       // Attack and capture enemy city
-    DESTROY_UNIT: 'destroy_unit',       // Hunt down specific enemy unit
-    BUILD_ARMY: 'build_army',           // Accumulate warriors before attacking
-
-    // Defensive goals
-    DEFEND_CITY: 'defend_city',         // Protect city from nearby threats
-    ESCORT_SETTLER: 'escort_settler',   // Protect settler on journey
-
-    // Economic goals
-    TECH_UP: 'tech_up',                 // Increase tech level
-    REPAIR_CITY: 'repair_city'          // Heal damaged city
+const AI_PERSONALITY = {
+    MILITARISTIC: 'militaristic',
+    EXPANSIONIST: 'expansionist'
 };
 
 const AI_ACTION_TYPE = {
@@ -61,44 +36,19 @@ const AI_ACTION_TYPE = {
 
 const DIFFICULTY_CONFIG = {
     [AI_DIFFICULTY.EASY]: {
-        impairmentLevel: 0.4,
-        maxLookahead: 1,
-        threatAwareness: 0.5,
-        goalPersistence: 0.6,       // How likely to stick with goals
-        armySizeForAttack: 2,       // Warriors needed before attacking
-        peaceThreshold: 0.3,
-        warThreshold: 0.7,
-        territoryBeforeWar: 8       // Territory tiles before considering war
+        mistakeChance: 0.3,       // Chance to make suboptimal move
+        aggressionBonus: 0,       // Modifier for war threshold
+        defenseAwareness: 0.5    // How much to weigh defense
     },
     [AI_DIFFICULTY.MEDIUM]: {
-        impairmentLevel: 0.15,
-        maxLookahead: 2,
-        threatAwareness: 0.8,
-        goalPersistence: 0.75,
-        armySizeForAttack: 3,
-        peaceThreshold: 0.5,
-        warThreshold: 0.5,
-        territoryBeforeWar: 12
+        mistakeChance: 0.15,
+        aggressionBonus: 0.1,
+        defenseAwareness: 0.8
     },
     [AI_DIFFICULTY.HARD]: {
-        impairmentLevel: 0.0,
-        maxLookahead: 3,
-        threatAwareness: 1.0,
-        goalPersistence: 0.9,
-        armySizeForAttack: 4,
-        peaceThreshold: 0.6,
-        warThreshold: 0.35,
-        territoryBeforeWar: 15
-    },
-    [AI_DIFFICULTY.EXPERIMENTAL]: {
-        impairmentLevel: 0.0,
-        maxLookahead: 4,
-        threatAwareness: 1.0,
-        goalPersistence: 0.85,
-        armySizeForAttack: 3,
-        peaceThreshold: 0.5,
-        warThreshold: 0.4,
-        territoryBeforeWar: 12
+        mistakeChance: 0.0,
+        aggressionBonus: 0.2,
+        defenseAwareness: 1.0
     }
 };
 
@@ -113,19 +63,13 @@ class AIController {
         this.difficulty = difficulty;
         this.config = DIFFICULTY_CONFIG[difficulty];
 
-        // Strategic state
-        this.currentStrategy = AI_STRATEGY.EXPANSION;
-        this.strategyTurnsRemaining = 0;
+        // Randomly assign personality
+        this.personality = Math.random() < 0.5 ? AI_PERSONALITY.MILITARISTIC : AI_PERSONALITY.EXPANSIONIST;
+        console.log(`[AI] Player ${playerId} personality: ${this.personality}`);
 
-        // Goal management
-        this.activeGoals = [];          // List of {type, priority, target, assignedUnits, progress}
-        this.unitAssignments = {};      // pieceId -> goalIndex
-
-        // Memory
-        this.eventMemory = [];
-        this.pendingPeaceProposals = [];
-        this.turnsAtWar = {};           // playerId -> turns at war
-        this.lastArmySize = 0;
+        // Track state for decision making
+        this.turnsAtWar = {};
+        this.lastWarDeclaration = -10;  // Turn when last declared war
     }
 
     // ========================================
@@ -134,30 +78,21 @@ class AIController {
 
     executeTurn() {
         const actionsTaken = [];
-        console.log(`[AI] Player ${this.playerId} turn (${this.difficulty}) - Strategy: ${this.currentStrategy}`);
+        console.log(`[AI] Player ${this.playerId} turn (${this.personality}) - Turn ${this.engine.turnNumber}`);
 
-        // 1. Analyze game state
-        const gameState = this.analyzeGameState();
+        // 1. Analyze the current board state
+        const boardState = this.analyzeBoardState();
 
-        // 2. Update strategy based on game phase and situation
-        this.updateStrategy(gameState);
-
-        // 3. Handle diplomacy (peace proposals, war declarations)
-        const diplomacyActions = this.handleDiplomacy(gameState);
+        // 2. Handle diplomacy based on personality
+        const diplomacyActions = this.handleDiplomacy(boardState);
         actionsTaken.push(...diplomacyActions);
 
-        // 4. Update and prioritize goals
-        this.updateGoals(gameState);
-
-        // 5. Assign units to goals
-        this.assignUnitsToGoals(gameState);
-
-        // 6. Set city productions based on goals
-        const productionActions = this.handleProduction(gameState);
+        // 3. Handle city production (reevaluate for any city without active production)
+        const productionActions = this.handleProduction(boardState);
         actionsTaken.push(...productionActions);
 
-        // 7. Execute unit actions toward their assigned goals
-        const unitActions = this.executeGoalActions(gameState);
+        // 4. Execute unit movements based on personality
+        const unitActions = this.executeUnitActions(boardState);
         actionsTaken.push(...unitActions);
 
         console.log(`[AI] Player ${this.playerId} completed ${actionsTaken.length} actions`);
@@ -165,96 +100,111 @@ class AIController {
     }
 
     // ========================================
-    // GAME STATE ANALYSIS
+    // BOARD STATE ANALYSIS
     // ========================================
 
-    analyzeGameState() {
+    analyzeBoardState() {
         const baseState = this.engine.getGameStateForAI(this.playerId);
 
-        // Get heatmaps
-        let threatHeatmap, opportunityHeatmap, territoryHeatmap, expansionHeatmap;
-        try {
-            threatHeatmap = this.engine.getThreatHeatmap(this.playerId);
-            opportunityHeatmap = this.engine.getOpportunityHeatmap(this.playerId);
-            territoryHeatmap = this.engine.getTerritoryHeatmap(this.playerId);
-            expansionHeatmap = this.engine.getExpansionHeatmap(this.playerId);
-        } catch (e) {
-            // Fallback if heatmaps not available
-            threatHeatmap = this.createEmptyHeatmap();
-            opportunityHeatmap = this.createEmptyHeatmap();
-            territoryHeatmap = this.createEmptyHeatmap();
-            expansionHeatmap = this.createEmptyHeatmap();
+        // Count armies for each player
+        const armyCounts = {};
+        armyCounts[this.playerId] = baseState.ownPieces.warriors.length;
+
+        let maxEnemyArmy = 0;
+        for (const enemyId in baseState.enemyPieces) {
+            const count = baseState.enemyPieces[enemyId].warriors.length;
+            armyCounts[enemyId] = count;
+            maxEnemyArmy = Math.max(maxEnemyArmy, count);
         }
-
-        // Find best expansion locations
-        const expansionSpots = this.findExpansionSpots(expansionHeatmap);
-
-        // Analyze threats to our cities
-        const cityThreats = this.analyzeCityThreats(baseState, threatHeatmap);
 
         // Find vulnerable enemy cities
-        const vulnerableEnemies = this.findVulnerableEnemies(baseState);
+        const vulnerableCities = this.findVulnerableCities(baseState);
 
-        // Calculate army strength
-        const armyStrength = this.calculateArmyStrength(baseState);
+        // Find good expansion spots
+        const expansionSpots = this.findExpansionSpots();
 
-        // Relative power against each enemy
-        const relativePower = {};
-        this.engine.players.forEach((player, i) => {
-            if (i !== this.playerId && this.engine.getPlayerCities(i).length > 0) {
-                relativePower[i] = this.engine.getRelativeStrength(this.playerId, i);
-            }
-        });
+        // Find threatened own cities
+        const threatenedCities = this.findThreatenedCities(baseState);
 
-        return {
-            ...baseState,
-            threatHeatmap,
-            opportunityHeatmap,
-            territoryHeatmap,
-            expansionHeatmap,
-            expansionSpots,
-            cityThreats,
-            vulnerableEnemies,
-            armyStrength,
-            relativePower
-        };
-    }
-
-    createEmptyHeatmap() {
-        const heatmap = [];
-        for (let r = 0; r < BOARD_SIZE; r++) {
-            heatmap[r] = [];
-            for (let c = 0; c < BOARD_SIZE; c++) {
-                heatmap[r][c] = 0;
-            }
-        }
-        return heatmap;
-    }
-
-    findExpansionSpots(expansionHeatmap) {
-        const spots = [];
+        // Calculate territory counts
+        const territoryCounts = {};
         for (let r = 0; r < BOARD_SIZE; r++) {
             for (let c = 0; c < BOARD_SIZE; c++) {
-                // Check if this is a valid city location
-                const canBuild = this.canBuildCityAt(r, c);
-                if (canBuild) {
-                    spots.push({
-                        row: r,
-                        col: c,
-                        value: expansionHeatmap[r][c] + this.evaluateCityLocation(r, c)
-                    });
+                const owner = this.engine.tileOwnership[r][c];
+                if (owner !== null) {
+                    territoryCounts[owner] = (territoryCounts[owner] || 0) + 1;
                 }
             }
         }
-        spots.sort((a, b) => b.value - a.value);
-        return spots.slice(0, 5);
+
+        return {
+            ...baseState,
+            armyCounts,
+            maxEnemyArmy,
+            myArmy: armyCounts[this.playerId] || 0,
+            vulnerableCities,
+            expansionSpots,
+            threatenedCities,
+            territoryCounts,
+            myTerritory: territoryCounts[this.playerId] || 0
+        };
+    }
+
+    findVulnerableCities(baseState) {
+        const targets = [];
+        const player = this.engine.players[this.playerId];
+
+        for (const enemyId in baseState.enemyPieces) {
+            const enemy = baseState.enemyPieces[enemyId];
+            const atWar = player.relations[enemyId] === 'war';
+
+            for (const city of enemy.cities) {
+                // Count defenders within 2 tiles
+                const defenders = enemy.warriors.filter(w =>
+                    this.chebyshevDistance(w.row, w.col, city.row, city.col) <= 2
+                ).length;
+
+                // Calculate distance from our nearest warrior
+                let closestDist = BOARD_SIZE * 2;
+                for (const warrior of baseState.ownPieces.warriors) {
+                    const dist = this.chebyshevDistance(warrior.row, warrior.col, city.row, city.col);
+                    closestDist = Math.min(closestDist, dist);
+                }
+
+                targets.push({
+                    city,
+                    ownerId: parseInt(enemyId),
+                    defenders,
+                    distance: closestDist,
+                    atWar,
+                    hp: city.hp,
+                    // Vulnerability score: low HP, few defenders, close = more vulnerable
+                    vulnerability: (4 - city.hp) * 10 + (3 - defenders) * 15 + Math.max(0, 10 - closestDist) * 5
+                });
+            }
+        }
+
+        return targets.sort((a, b) => b.vulnerability - a.vulnerability);
+    }
+
+    findExpansionSpots() {
+        const spots = [];
+
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (this.canBuildCityAt(r, c)) {
+                    const score = this.evaluateCityLocation(r, c);
+                    spots.push({ row: r, col: c, score });
+                }
+            }
+        }
+
+        return spots.sort((a, b) => b.score - a.score).slice(0, 5);
     }
 
     canBuildCityAt(row, col) {
-        // Check if position is valid for a new city
-        if (this.engine.board[row][col]) return false; // Occupied
+        if (this.engine.board[row][col]) return false;
 
-        // Must be 2+ tiles from other cities
         for (const piece of this.engine.pieces) {
             if (piece.type === PIECE_TYPES.CITY) {
                 const dist = Math.max(Math.abs(piece.row - row), Math.abs(piece.col - col));
@@ -267,629 +217,319 @@ class AIController {
     evaluateCityLocation(row, col) {
         let score = 0;
 
-        // Prefer positions with more adjacent tiles (not edges)
+        // Prefer central positions
         const fromEdge = Math.min(row, col, BOARD_SIZE - 1 - row, BOARD_SIZE - 1 - col);
-        score += fromEdge * 2;
+        score += fromEdge * 3;
 
-        // Prefer tiles we already own
+        // Prefer our own territory
         if (this.engine.tileOwnership[row][col] === this.playerId) {
-            score += 5;
+            score += 10;
         }
 
-        // Bonus for distance from enemy cities (safer)
-        let minEnemyDist = BOARD_SIZE;
+        // Avoid enemy cities
         for (const piece of this.engine.pieces) {
             if (piece.type === PIECE_TYPES.CITY && piece.ownerId !== this.playerId) {
-                const dist = AIUtils.chebyshevDistance(row, col, piece.row, piece.col);
-                minEnemyDist = Math.min(minEnemyDist, dist);
+                const dist = this.chebyshevDistance(row, col, piece.row, piece.col);
+                if (dist < 4) score -= (4 - dist) * 5;
             }
         }
-        score += Math.min(minEnemyDist, 5);
 
         return score;
     }
 
-    analyzeCityThreats(gameState, threatHeatmap) {
-        const threats = [];
-        for (const city of gameState.ownPieces.cities) {
-            const threat = {
-                city: city,
-                level: threatHeatmap[city.row][city.col],
-                nearbyEnemies: []
-            };
+    findThreatenedCities(baseState) {
+        const threatened = [];
 
-            // Find enemy units within 3 tiles
-            for (const enemyId in gameState.enemyPieces) {
-                const enemy = gameState.enemyPieces[enemyId];
+        for (const city of baseState.ownPieces.cities) {
+            const nearbyEnemies = [];
+
+            for (const enemyId in baseState.enemyPieces) {
+                const enemy = baseState.enemyPieces[enemyId];
                 for (const warrior of enemy.warriors) {
-                    const dist = AIUtils.chebyshevDistance(city.row, city.col, warrior.row, warrior.col);
+                    const dist = this.chebyshevDistance(city.row, city.col, warrior.row, warrior.col);
                     if (dist <= 3) {
-                        threat.nearbyEnemies.push({ ...warrior, distance: dist, ownerId: parseInt(enemyId) });
+                        nearbyEnemies.push({ ...warrior, distance: dist, ownerId: parseInt(enemyId) });
                     }
                 }
             }
 
-            threat.level = Math.max(threat.level, threat.nearbyEnemies.length * 0.3);
-            threats.push(threat);
+            if (nearbyEnemies.length > 0) {
+                threatened.push({
+                    city,
+                    enemies: nearbyEnemies,
+                    threatLevel: nearbyEnemies.reduce((sum, e) => sum + (4 - e.distance), 0)
+                });
+            }
         }
-        return threats.sort((a, b) => b.level - a.level);
+
+        return threatened.sort((a, b) => b.threatLevel - a.threatLevel);
     }
 
-    findVulnerableEnemies(gameState) {
-        const targets = [];
+    // ========================================
+    // DIPLOMACY HANDLING
+    // ========================================
+
+    handleDiplomacy(boardState) {
+        const actions = [];
         const player = this.engine.players[this.playerId];
 
-        for (const enemyId in gameState.enemyPieces) {
-            const enemy = gameState.enemyPieces[enemyId];
-            const atWar = player.relations[enemyId] === 'war';
+        // Handle incoming peace proposals
+        for (let otherId = 0; otherId < this.engine.players.length; otherId++) {
+            if (otherId === this.playerId) continue;
+            const otherPlayer = this.engine.players[otherId];
+            if (!otherPlayer) continue;
 
-            for (const city of enemy.cities) {
-                // Calculate vulnerability
-                let vulnerability = 0;
-
-                // Low HP = vulnerable
-                vulnerability += (1 - city.hp / city.maxHp) * 50;
-
-                // Few defenders = vulnerable
-                const defenders = enemy.warriors.filter(w =>
-                    AIUtils.chebyshevDistance(w.row, w.col, city.row, city.col) <= 2
-                ).length;
-                vulnerability += Math.max(0, 30 - defenders * 15);
-
-                // Distance from our units
-                let closestWarrior = BOARD_SIZE;
-                for (const warrior of gameState.ownPieces.warriors) {
-                    const dist = AIUtils.chebyshevDistance(warrior.row, warrior.col, city.row, city.col);
-                    closestWarrior = Math.min(closestWarrior, dist);
-                }
-                vulnerability += Math.max(0, 20 - closestWarrior * 3);
-
-                targets.push({
-                    city: city,
-                    ownerId: parseInt(enemyId),
-                    vulnerability: vulnerability,
-                    atWar: atWar,
-                    defenders: defenders,
-                    distance: closestWarrior
-                });
-            }
-        }
-
-        return targets.sort((a, b) => b.vulnerability - a.vulnerability);
-    }
-
-    calculateArmyStrength(gameState) {
-        return {
-            warriors: gameState.ownPieces.warriors.length,
-            totalHP: gameState.ownPieces.warriors.reduce((sum, w) => sum + w.hp, 0),
-            settlers: gameState.ownPieces.settlers.length
-        };
-    }
-
-    // ========================================
-    // STRATEGY SELECTION
-    // ========================================
-
-    updateStrategy(gameState) {
-        if (this.strategyTurnsRemaining > 0 && Math.random() < this.config.goalPersistence) {
-            this.strategyTurnsRemaining--;
-            return this.currentStrategy;
-        }
-
-        const scores = {
-            [AI_STRATEGY.EXPANSION]: 0,
-            [AI_STRATEGY.RESEARCH]: 0,
-            [AI_STRATEGY.MILITARIZATION]: 0,
-            [AI_STRATEGY.DEFENSIVE]: 0
-        };
-
-        // === EXPANSION triggers ===
-        // Few cities -> expand
-        if (gameState.ownPieces.cities.length < 2) {
-            scores[AI_STRATEGY.EXPANSION] += 50;
-        }
-        // Good expansion spots available
-        if (gameState.expansionSpots.length > 0) {
-            scores[AI_STRATEGY.EXPANSION] += 25;
-        }
-        // Have settler ready
-        if (gameState.ownPieces.settlers.length > 0) {
-            scores[AI_STRATEGY.EXPANSION] += 30;
-        }
-        // Early game
-        if (gameState.gamePhase === 'early') {
-            scores[AI_STRATEGY.EXPANSION] += 20;
-        }
-
-        // === MILITARIZATION triggers ===
-        // Have army ready
-        if (gameState.armyStrength.warriors >= this.config.armySizeForAttack) {
-            scores[AI_STRATEGY.MILITARIZATION] += 35;
-        }
-        // Vulnerable enemy exists
-        if (gameState.vulnerableEnemies.length > 0 && gameState.vulnerableEnemies[0].vulnerability > 40) {
-            scores[AI_STRATEGY.MILITARIZATION] += 30;
-        }
-        // We're stronger than enemies
-        let dominated = 0;
-        for (const enemyId in gameState.relativePower) {
-            if (gameState.relativePower[enemyId].advantage === 'strong') dominated++;
-        }
-        if (dominated > 0) {
-            scores[AI_STRATEGY.MILITARIZATION] += dominated * 20;
-        }
-        // Mid/late game
-        if (gameState.gamePhase === 'mid' || gameState.gamePhase === 'late') {
-            scores[AI_STRATEGY.MILITARIZATION] += 15;
-        }
-        // Already at war
-        const player = this.engine.players[this.playerId];
-        const atWar = Object.values(player.relations).some(r => r === 'war');
-        if (atWar) {
-            scores[AI_STRATEGY.MILITARIZATION] += 25;
-        }
-
-        // === DEFENSIVE triggers ===
-        // Cities under threat
-        const highThreats = gameState.cityThreats.filter(t => t.level > 0.3).length;
-        if (highThreats > 0) {
-            scores[AI_STRATEGY.DEFENSIVE] += highThreats * 30;
-        }
-        // We're weaker than enemies
-        let dominated_by = 0;
-        for (const enemyId in gameState.relativePower) {
-            if (gameState.relativePower[enemyId].advantage === 'weak') dominated_by++;
-        }
-        if (dominated_by > 0) {
-            scores[AI_STRATEGY.DEFENSIVE] += dominated_by * 25;
-        }
-
-        // === RESEARCH triggers ===
-        // Low tech
-        if (gameState.techLevel < 2) {
-            scores[AI_STRATEGY.RESEARCH] += 20;
-        }
-        // Behind in tech
-        for (const enemyId in gameState.enemyPieces) {
-            const enemy = this.engine.players[enemyId];
-            if (enemy && enemy.techScore > gameState.techLevel) {
-                scores[AI_STRATEGY.RESEARCH] += 15;
-            }
-        }
-        // Safe position (no threats, good army)
-        if (highThreats === 0 && gameState.armyStrength.warriors >= 2) {
-            scores[AI_STRATEGY.RESEARCH] += 15;
-        }
-
-        // Find best strategy
-        let best = AI_STRATEGY.EXPANSION;
-        let bestScore = scores[best];
-        for (const strategy in scores) {
-            // Add some randomness based on impairment
-            const noise = (Math.random() - 0.5) * this.config.impairmentLevel * 30;
-            const adjustedScore = scores[strategy] + noise;
-            if (adjustedScore > bestScore) {
-                bestScore = adjustedScore;
-                best = strategy;
-            }
-        }
-
-        if (best !== this.currentStrategy) {
-            console.log(`[AI] Player ${this.playerId} switching strategy: ${this.currentStrategy} -> ${best}`);
-        }
-
-        this.currentStrategy = best;
-        this.strategyTurnsRemaining = 3 + Math.floor(Math.random() * 3);
-        return best;
-    }
-
-    // ========================================
-    // GOAL MANAGEMENT
-    // ========================================
-
-    updateGoals(gameState) {
-        // Remove completed or invalid goals
-        this.activeGoals = this.activeGoals.filter(goal => this.isGoalValid(goal, gameState));
-
-        // Generate new goals based on strategy
-        const newGoals = this.generateGoals(gameState);
-
-        // Merge with existing goals (don't duplicate)
-        for (const newGoal of newGoals) {
-            const exists = this.activeGoals.some(g =>
-                g.type === newGoal.type &&
-                g.target?.row === newGoal.target?.row &&
-                g.target?.col === newGoal.target?.col
-            );
-            if (!exists) {
-                this.activeGoals.push(newGoal);
-            }
-        }
-
-        // Sort by priority
-        this.activeGoals.sort((a, b) => b.priority - a.priority);
-
-        // Limit active goals
-        this.activeGoals = this.activeGoals.slice(0, 5);
-
-        console.log(`[AI] Player ${this.playerId} goals:`, this.activeGoals.map(g => `${g.type}(${g.priority})`).join(', '));
-    }
-
-    isGoalValid(goal, gameState) {
-        switch (goal.type) {
-            case AI_GOAL.FOUND_CITY:
-                // Check if target location is still valid
-                return this.canBuildCityAt(goal.target.row, goal.target.col) &&
-                       gameState.ownPieces.settlers.length > 0;
-
-            case AI_GOAL.CAPTURE_CITY:
-                // Check if target city still exists and is enemy
-                const targetCity = this.engine.board[goal.target.row][goal.target.col];
-                return targetCity &&
-                       targetCity.type === PIECE_TYPES.CITY &&
-                       targetCity.ownerId !== this.playerId;
-
-            case AI_GOAL.DEFEND_CITY:
-                // Check if city still exists and is threatened
-                const myCity = this.engine.board[goal.target.row][goal.target.col];
-                return myCity &&
-                       myCity.type === PIECE_TYPES.CITY &&
-                       myCity.ownerId === this.playerId;
-
-            case AI_GOAL.BUILD_ARMY:
-                // Valid if we don't have enough warriors yet
-                return gameState.armyStrength.warriors < this.config.armySizeForAttack;
-
-            case AI_GOAL.EXPAND_TERRITORY:
-            case AI_GOAL.TECH_UP:
-                return true; // Always valid
-
-            default:
-                return true;
-        }
-    }
-
-    generateGoals(gameState) {
-        const goals = [];
-        const player = this.engine.players[this.playerId];
-
-        // === DEFENSIVE GOALS (highest priority when needed) ===
-        for (const threat of gameState.cityThreats) {
-            if (threat.level > 0.2 || threat.nearbyEnemies.length > 0) {
-                goals.push({
-                    type: AI_GOAL.DEFEND_CITY,
-                    priority: 80 + threat.level * 20,
-                    target: { row: threat.city.row, col: threat.city.col, id: threat.city.id },
-                    threats: threat.nearbyEnemies
-                });
-            }
-        }
-
-        // === EXPANSION GOALS ===
-        if (this.currentStrategy === AI_STRATEGY.EXPANSION || gameState.ownPieces.cities.length < 2) {
-            // Found new city
-            if (gameState.expansionSpots.length > 0 && gameState.ownPieces.settlers.length > 0) {
-                const spot = gameState.expansionSpots[0];
-                goals.push({
-                    type: AI_GOAL.FOUND_CITY,
-                    priority: this.currentStrategy === AI_STRATEGY.EXPANSION ? 70 : 50,
-                    target: { row: spot.row, col: spot.col }
-                });
-            }
-
-            // Expand territory via diplomacy
-            if (gameState.territory.owned < this.config.territoryBeforeWar) {
-                goals.push({
-                    type: AI_GOAL.EXPAND_TERRITORY,
-                    priority: 40
-                });
-            }
-        }
-
-        // === MILITARY GOALS ===
-        if (this.currentStrategy === AI_STRATEGY.MILITARIZATION ||
-            gameState.armyStrength.warriors >= this.config.armySizeForAttack) {
-
-            // Build army first if needed
-            if (gameState.armyStrength.warriors < this.config.armySizeForAttack) {
-                goals.push({
-                    type: AI_GOAL.BUILD_ARMY,
-                    priority: 60,
-                    needed: this.config.armySizeForAttack - gameState.armyStrength.warriors
-                });
-            }
-
-            // Attack vulnerable city
-            for (const target of gameState.vulnerableEnemies.slice(0, 2)) {
-                const isAtWar = player.relations[target.ownerId] === 'war';
-
-                // Only target if at war OR ready to declare war
-                if (isAtWar || (gameState.armyStrength.warriors >= this.config.armySizeForAttack)) {
-                    goals.push({
-                        type: AI_GOAL.CAPTURE_CITY,
-                        priority: isAtWar ? 75 : 55,
-                        target: { row: target.city.row, col: target.city.col, ownerId: target.ownerId },
-                        vulnerability: target.vulnerability
-                    });
+            if (otherPlayer.relations[this.playerId] === 'peace_proposed') {
+                if (this.shouldAcceptPeace(otherId, boardState)) {
+                    this.engine.acceptPeace(this.playerId, otherId);
+                    actions.push({ type: AI_ACTION_TYPE.ACCEPT_PEACE, target: otherId });
+                    console.log(`[AI] Player ${this.playerId} accepted peace from ${otherId}`);
                 }
             }
         }
 
-        // === RESEARCH GOALS ===
-        if (this.currentStrategy === AI_STRATEGY.RESEARCH) {
-            goals.push({
-                type: AI_GOAL.TECH_UP,
-                priority: 50
-            });
-        }
+        // Consider declaring war based on personality
+        if (this.personality === AI_PERSONALITY.MILITARISTIC) {
+            // Militaristic: declare war when army is ready
+            const turnsSinceLastWar = this.engine.turnNumber - this.lastWarDeclaration;
+            const armyReady = boardState.myArmy >= 3;
 
-        // === REPAIR GOALS ===
-        for (const city of gameState.ownPieces.cities) {
-            if (city.hp < city.maxHp * 0.5) {
-                goals.push({
-                    type: AI_GOAL.REPAIR_CITY,
-                    priority: 45,
-                    target: { row: city.row, col: city.col, id: city.id }
-                });
-            }
-        }
-
-        return goals;
-    }
-
-    // ========================================
-    // UNIT ASSIGNMENT
-    // ========================================
-
-    assignUnitsToGoals(gameState) {
-        this.unitAssignments = {};
-
-        const availableWarriors = [...gameState.ownPieces.warriors];
-        const availableSettlers = [...gameState.ownPieces.settlers];
-
-        for (const goal of this.activeGoals) {
-            switch (goal.type) {
-                case AI_GOAL.DEFEND_CITY:
-                    // Assign nearest warriors to defense
-                    const defendersNeeded = Math.max(1, goal.threats?.length || 1);
-                    const nearestDefenders = this.findNearestUnits(
-                        availableWarriors,
-                        goal.target.row,
-                        goal.target.col,
-                        defendersNeeded
-                    );
-                    for (const warrior of nearestDefenders) {
-                        this.unitAssignments[warrior.id] = goal;
-                        const idx = availableWarriors.findIndex(w => w.id === warrior.id);
-                        if (idx >= 0) availableWarriors.splice(idx, 1);
-                    }
-                    break;
-
-                case AI_GOAL.FOUND_CITY:
-                    // Assign nearest settler
-                    if (availableSettlers.length > 0) {
-                        const nearest = this.findNearestUnits(
-                            availableSettlers,
-                            goal.target.row,
-                            goal.target.col,
-                            1
-                        );
-                        if (nearest.length > 0) {
-                            this.unitAssignments[nearest[0].id] = goal;
-                            const idx = availableSettlers.findIndex(s => s.id === nearest[0].id);
-                            if (idx >= 0) availableSettlers.splice(idx, 1);
+            if (armyReady && turnsSinceLastWar >= 5 && boardState.vulnerableCities.length > 0) {
+                for (const target of boardState.vulnerableCities) {
+                    if (player.relations[target.ownerId] === 'peace') {
+                        // Check relative strength
+                        const theirArmy = boardState.armyCounts[target.ownerId] || 0;
+                        if (boardState.myArmy >= theirArmy) {
+                            this.engine.declareWar(this.playerId, target.ownerId);
+                            this.lastWarDeclaration = this.engine.turnNumber;
+                            actions.push({ type: AI_ACTION_TYPE.DECLARE_WAR, target: target.ownerId });
+                            console.log(`[AI] Player ${this.playerId} (militaristic) declared war on ${target.ownerId}`);
+                            break;
                         }
                     }
-                    break;
+                }
+            }
+        } else {
+            // Expansionist: only declare war if threatened or to capture critical territory
+            const isDirectlyThreatened = boardState.threatenedCities.length > 0;
+            const hasSignificantAdvantage = boardState.myArmy >= boardState.maxEnemyArmy + 2;
 
-                case AI_GOAL.CAPTURE_CITY:
-                    // Assign multiple warriors to attack together
-                    const attackers = this.findNearestUnits(
-                        availableWarriors,
-                        goal.target.row,
-                        goal.target.col,
-                        Math.min(this.config.armySizeForAttack, availableWarriors.length)
-                    );
-                    for (const warrior of attackers) {
-                        this.unitAssignments[warrior.id] = goal;
-                        const idx = availableWarriors.findIndex(w => w.id === warrior.id);
-                        if (idx >= 0) availableWarriors.splice(idx, 1);
+            if ((isDirectlyThreatened || hasSignificantAdvantage) && boardState.vulnerableCities.length > 0) {
+                for (const target of boardState.vulnerableCities) {
+                    if (player.relations[target.ownerId] === 'peace' && target.vulnerability > 50) {
+                        this.engine.declareWar(this.playerId, target.ownerId);
+                        this.lastWarDeclaration = this.engine.turnNumber;
+                        actions.push({ type: AI_ACTION_TYPE.DECLARE_WAR, target: target.ownerId });
+                        console.log(`[AI] Player ${this.playerId} (expansionist) declared war on ${target.ownerId}`);
+                        break;
                     }
-                    break;
-            }
-        }
-
-        // Remaining warriors: default behavior based on strategy
-        for (const warrior of availableWarriors) {
-            if (this.currentStrategy === AI_STRATEGY.DEFENSIVE) {
-                // Move toward nearest own city
-                const nearestCity = this.findNearestCity(warrior, gameState.ownPieces.cities);
-                if (nearestCity) {
-                    this.unitAssignments[warrior.id] = {
-                        type: AI_GOAL.DEFEND_CITY,
-                        priority: 30,
-                        target: nearestCity
-                    };
-                }
-            } else if (this.currentStrategy === AI_STRATEGY.MILITARIZATION) {
-                // Move toward enemy territory
-                if (gameState.vulnerableEnemies.length > 0) {
-                    const target = gameState.vulnerableEnemies[0];
-                    this.unitAssignments[warrior.id] = {
-                        type: AI_GOAL.CAPTURE_CITY,
-                        priority: 40,
-                        target: { row: target.city.row, col: target.city.col, ownerId: target.ownerId }
-                    };
                 }
             }
         }
-    }
 
-    findNearestUnits(units, targetRow, targetCol, count) {
-        const sorted = units.map(u => ({
-            ...u,
-            distance: AIUtils.chebyshevDistance(u.row, u.col, targetRow, targetCol)
-        })).sort((a, b) => a.distance - b.distance);
+        // Consider proposing peace if losing badly
+        for (let otherId = 0; otherId < this.engine.players.length; otherId++) {
+            if (otherId === this.playerId) continue;
+            if (player.relations[otherId] !== 'war') continue;
 
-        return sorted.slice(0, count);
-    }
-
-    findNearestCity(unit, cities) {
-        let nearest = null;
-        let minDist = Infinity;
-        for (const city of cities) {
-            const dist = AIUtils.chebyshevDistance(unit.row, unit.col, city.row, city.col);
-            if (dist < minDist) {
-                minDist = dist;
-                nearest = city;
-            }
-        }
-        return nearest;
-    }
-
-    // ========================================
-    // PRODUCTION HANDLING
-    // ========================================
-
-    handleProduction(gameState) {
-        const actions = [];
-
-        // Determine what we need based on goals
-        const needs = this.assessProductionNeeds(gameState);
-
-        for (const cityData of gameState.ownPieces.cities) {
-            const city = this.engine.pieces.find(p => p.id === cityData.id);
-            if (!city) continue;
-
-            // If already building something and it aligns with needs, continue
-            if (city.production) {
-                const currentProd = city.production;
-                if (needs[currentProd] > 0) {
-                    needs[currentProd]--;
-                    continue;
-                }
-                // Otherwise, might switch
-                if (Math.random() < 0.7) continue; // Usually stick with current
-            }
-
-            // Choose best production
-            const choice = this.chooseBestProduction(city, needs, gameState);
-            if (choice && city.production !== choice) {
-                this.engine.setProduction(city, choice);
-                actions.push({
-                    type: AI_ACTION_TYPE.SET_PRODUCTION,
-                    city: city,
-                    production: choice
-                });
-                if (needs[choice] > 0) needs[choice]--;
+            const theirArmy = boardState.armyCounts[otherId] || 0;
+            if (theirArmy > boardState.myArmy * 2 && boardState.ownPieces.cities.length <= 1) {
+                this.engine.proposePeace(this.playerId, otherId);
+                actions.push({ type: AI_ACTION_TYPE.PROPOSE_PEACE, target: otherId });
+                console.log(`[AI] Player ${this.playerId} proposed peace to ${otherId}`);
             }
         }
 
         return actions;
     }
 
-    assessProductionNeeds(gameState) {
-        const needs = {
-            WARRIOR: 0,
-            SETTLER: 0,
-            SCIENCE: 0,
-            DIPLOMACY: 0,
-            REPAIR: 0
-        };
+    shouldAcceptPeace(proposerId, boardState) {
+        const theirArmy = boardState.armyCounts[proposerId] || 0;
 
-        for (const goal of this.activeGoals) {
-            switch (goal.type) {
-                case AI_GOAL.BUILD_ARMY:
-                case AI_GOAL.CAPTURE_CITY:
-                case AI_GOAL.DEFEND_CITY:
-                    needs.WARRIOR += 2;
-                    break;
-                case AI_GOAL.FOUND_CITY:
-                    if (gameState.ownPieces.settlers.length === 0) {
-                        needs.SETTLER += 1;
-                    }
-                    break;
-                case AI_GOAL.EXPAND_TERRITORY:
-                    needs.DIPLOMACY += 1;
-                    break;
-                case AI_GOAL.TECH_UP:
-                    needs.SCIENCE += 1;
-                    break;
-                case AI_GOAL.REPAIR_CITY:
-                    needs.REPAIR += 1;
-                    break;
+        // Accept if we're weaker or equal
+        if (theirArmy >= boardState.myArmy) return true;
+
+        // Accept if multiple enemies
+        let warCount = 0;
+        const player = this.engine.players[this.playerId];
+        for (const rel of Object.values(player.relations)) {
+            if (rel === 'war') warCount++;
+        }
+        if (warCount > 1) return true;
+
+        // Militaristic is less likely to accept peace
+        if (this.personality === AI_PERSONALITY.MILITARISTIC) {
+            return boardState.myArmy < 2;
+        }
+
+        return true;
+    }
+
+    // ========================================
+    // PRODUCTION HANDLING
+    // ========================================
+
+    handleProduction(boardState) {
+        const actions = [];
+
+        for (const cityData of boardState.ownPieces.cities) {
+            const city = this.engine.pieces.find(p => p.id === cityData.id);
+            if (!city) continue;
+
+            // CRITICAL: Reevaluate if no production is set (project completed or never set)
+            if (!city.production) {
+                const choice = this.chooseProduction(city, boardState);
+                if (choice) {
+                    this.engine.setProduction(city, choice);
+                    actions.push({
+                        type: AI_ACTION_TYPE.SET_PRODUCTION,
+                        city: city,
+                        production: choice
+                    });
+                    console.log(`[AI] Player ${this.playerId} set ${city.id} production to ${choice}`);
+                }
             }
         }
 
-        // Strategy-based baseline
-        switch (this.currentStrategy) {
-            case AI_STRATEGY.EXPANSION:
-                needs.SETTLER += 1;
-                needs.DIPLOMACY += 1;
-                break;
-            case AI_STRATEGY.MILITARIZATION:
-                needs.WARRIOR += 2;
-                break;
-            case AI_STRATEGY.DEFENSIVE:
-                needs.WARRIOR += 1;
-                break;
-            case AI_STRATEGY.RESEARCH:
-                needs.SCIENCE += 2;
-                break;
-        }
-
-        return needs;
+        return actions;
     }
 
-    chooseBestProduction(city, needs, gameState) {
-        const options = [];
-
-        // Repair if city is damaged
-        if (city.hp < city.maxHp) {
-            const urgency = (1 - city.hp / city.maxHp) * 100;
-            options.push({ type: 'REPAIR', score: urgency + needs.REPAIR * 20 });
+    chooseProduction(city, boardState) {
+        // Priority 1: Repair if city is damaged significantly
+        if (city.hp < city.maxHp * 0.5) {
+            return 'REPAIR';
         }
 
-        // Warrior
-        options.push({ type: 'WARRIOR', score: needs.WARRIOR * 15 + 10 });
+        if (this.personality === AI_PERSONALITY.MILITARISTIC) {
+            return this.chooseMilitaristicProduction(city, boardState);
+        } else {
+            return this.chooseExpansionistProduction(city, boardState);
+        }
+    }
 
-        // Settler (only if expansion makes sense)
-        if (gameState.expansionSpots.length > 0 && gameState.ownPieces.settlers.length < 2) {
-            options.push({ type: 'SETTLER', score: needs.SETTLER * 25 + 5 });
+    chooseMilitaristicProduction(city, boardState) {
+        const player = this.engine.players[this.playerId];
+        const atWar = Object.values(player.relations).some(r => r === 'war');
+
+        // Militaristic priority:
+        // 1. Build army until strong
+        // 2. Research science for power
+        // 3. Build more army
+        // 4. Settler only if many cities needed for production
+
+        // Early game: focus on getting an army
+        if (boardState.myArmy < 3) {
+            return 'WARRIOR';
         }
 
-        // Science
-        options.push({ type: 'SCIENCE', score: needs.SCIENCE * 15 + 5 });
-
-        // Diplomacy (territory)
-        if (gameState.territory.owned < 20) {
-            options.push({ type: 'DIPLOMACY', score: needs.DIPLOMACY * 15 + 5 });
+        // If at war, keep building warriors
+        if (atWar) {
+            return 'WARRIOR';
         }
 
-        // Sort and pick (with impairment)
-        options.sort((a, b) => b.score - a.score);
-
-        if (Math.random() < this.config.impairmentLevel && options.length > 1) {
-            return options[Math.floor(Math.random() * Math.min(3, options.length))].type;
+        // If we have good army, alternate between warriors and science
+        const techScore = boardState.techLevel || 0;
+        if (techScore < 3 && Math.random() < 0.4) {
+            return 'SCIENCE';
         }
 
-        return options[0]?.type || 'WARRIOR';
+        // Build more warriors if we have less than max enemy
+        if (boardState.myArmy <= boardState.maxEnemyArmy) {
+            return 'WARRIOR';
+        }
+
+        // Consider settler if we have few cities and good spots
+        if (boardState.ownPieces.cities.length < 3 &&
+            boardState.ownPieces.settlers.length === 0 &&
+            boardState.expansionSpots.length > 0 &&
+            Math.random() < 0.3) {
+            return 'SETTLER';
+        }
+
+        // Default: build warriors
+        return 'WARRIOR';
+    }
+
+    chooseExpansionistProduction(city, boardState) {
+        const player = this.engine.players[this.playerId];
+        const atWar = Object.values(player.relations).some(r => r === 'war');
+
+        // Expansionist priority:
+        // 1. Keep army comparable to enemies
+        // 2. Build settlers for expansion
+        // 3. Expand territory (diplomacy) but not unchecked
+        // 4. Some science for balance
+
+        // Maintain army parity with biggest threat
+        if (boardState.myArmy < boardState.maxEnemyArmy) {
+            return 'WARRIOR';
+        }
+
+        // At war: build warriors
+        if (atWar && boardState.myArmy < boardState.maxEnemyArmy + 2) {
+            return 'WARRIOR';
+        }
+
+        // Priority: settlers for new cities
+        if (boardState.ownPieces.settlers.length === 0 &&
+            boardState.expansionSpots.length > 0) {
+            return 'SETTLER';
+        }
+
+        // Territory expansion but cap it to prevent endless diplomacy
+        // Don't expand territory beyond ~25 tiles or if territory is already double enemy average
+        const avgEnemyTerritory = this.getAverageEnemyTerritory(boardState);
+        const maxTerritory = Math.max(25, avgEnemyTerritory * 2);
+
+        if (boardState.myTerritory < maxTerritory && Math.random() < 0.35) {
+            return 'DIPLOMACY';
+        }
+
+        // Some science for balance
+        const techScore = boardState.techLevel || 0;
+        if (techScore < 2 && Math.random() < 0.25) {
+            return 'SCIENCE';
+        }
+
+        // Ensure standing army (at least 1 per city)
+        if (boardState.myArmy < boardState.ownPieces.cities.length) {
+            return 'WARRIOR';
+        }
+
+        // Default for expansionist: settler if spots available, else warrior
+        if (boardState.ownPieces.settlers.length === 0 && boardState.expansionSpots.length > 0) {
+            return 'SETTLER';
+        }
+
+        return 'WARRIOR';
+    }
+
+    getAverageEnemyTerritory(boardState) {
+        let total = 0;
+        let count = 0;
+
+        for (const enemyId in boardState.enemyPieces) {
+            const territory = boardState.territoryCounts[enemyId] || 0;
+            total += territory;
+            count++;
+        }
+
+        return count > 0 ? total / count : 10;
     }
 
     // ========================================
-    // GOAL EXECUTION
+    // UNIT ACTIONS
     // ========================================
 
-    executeGoalActions(gameState) {
+    executeUnitActions(boardState) {
         const actions = [];
 
-        // Process settlers first (city founding)
-        for (const settler of gameState.ownPieces.settlers) {
+        // Process settlers first (they can build cities)
+        for (const settler of boardState.ownPieces.settlers) {
             const piece = this.engine.pieces.find(p => p.id === settler.id);
             if (!piece || piece.hasMoved) continue;
 
-            const goal = this.unitAssignments[settler.id];
-            const action = this.executeSettlerGoal(piece, goal, gameState);
+            const action = this.executeSettlerAction(piece, boardState);
             if (action) {
                 const result = this.executeAction(action);
                 if (result.success) actions.push(action);
@@ -897,12 +537,11 @@ class AIController {
         }
 
         // Process warriors
-        for (const warrior of gameState.ownPieces.warriors) {
+        for (const warrior of boardState.ownPieces.warriors) {
             const piece = this.engine.pieces.find(p => p.id === warrior.id);
             if (!piece || piece.hasMoved) continue;
 
-            const goal = this.unitAssignments[warrior.id];
-            const action = this.executeWarriorGoal(piece, goal, gameState);
+            const action = this.executeWarriorAction(piece, boardState);
             if (action) {
                 const result = this.executeAction(action);
                 if (result.success) actions.push(action);
@@ -912,138 +551,237 @@ class AIController {
         return actions;
     }
 
-    executeSettlerGoal(settler, goal, gameState) {
+    executeSettlerAction(settler, boardState) {
         // Check if we can build city here
         const canBuild = this.engine.canSettlerBuildCity(settler);
 
-        if (goal?.type === AI_GOAL.FOUND_CITY) {
-            // At target location? Build!
-            if (settler.row === goal.target.row && settler.col === goal.target.col && canBuild.valid) {
-                return { type: AI_ACTION_TYPE.BUILD_CITY, piece: settler };
-            }
-
-            // Move toward target
-            return this.moveToward(settler, goal.target.row, goal.target.col, gameState);
-        }
-
-        // No specific goal - move toward best expansion spot if available
-        if (canBuild.valid && gameState.expansionHeatmap[settler.row][settler.col] > 0.5) {
+        // If at a good spot, build
+        if (canBuild.valid) {
             return { type: AI_ACTION_TYPE.BUILD_CITY, piece: settler };
         }
 
-        if (gameState.expansionSpots.length > 0) {
-            const target = gameState.expansionSpots[0];
-            return this.moveToward(settler, target.row, target.col, gameState);
+        // Move toward best expansion spot
+        if (boardState.expansionSpots.length > 0) {
+            const target = boardState.expansionSpots[0];
+            return this.moveToward(settler, target.row, target.col, boardState);
         }
 
-        // Just move somewhere safe
-        return this.moveToSafety(settler, gameState);
+        // No good spots - just stay safe
+        return this.moveToSafety(settler, boardState);
     }
 
-    executeWarriorGoal(warrior, goal, gameState) {
+    executeWarriorAction(warrior, boardState) {
         const player = this.engine.players[this.playerId];
 
-        if (goal?.type === AI_GOAL.DEFEND_CITY) {
-            // Move toward city and intercept threats
-            const targetCity = goal.target;
-            const dist = AIUtils.chebyshevDistance(warrior.row, warrior.col, targetCity.row, targetCity.col);
-
-            // If there are nearby enemies, attack them
-            const nearbyEnemy = this.findNearbyEnemy(warrior, gameState, 1);
-            if (nearbyEnemy && player.relations[nearbyEnemy.ownerId] === 'war') {
-                return {
-                    type: AI_ACTION_TYPE.ATTACK,
-                    piece: warrior,
-                    targetRow: nearbyEnemy.row,
-                    targetCol: nearbyEnemy.col,
-                    target: nearbyEnemy
-                };
-            }
-
-            // Move toward city if not adjacent
-            if (dist > 1) {
-                return this.moveToward(warrior, targetCity.row, targetCity.col, gameState);
-            }
-
-            // Stay near city - maybe move to better defensive position
-            return this.moveToDefensivePosition(warrior, targetCity, gameState);
+        // Random chance for mistake (difficulty-based)
+        if (Math.random() < this.config.mistakeChance) {
+            return this.randomMove(warrior);
         }
 
-        if (goal?.type === AI_GOAL.CAPTURE_CITY) {
-            const targetCity = goal.target;
-            const dist = AIUtils.chebyshevDistance(warrior.row, warrior.col, targetCity.row, targetCity.col);
+        // Priority 1: Defend threatened cities
+        if (boardState.threatenedCities.length > 0) {
+            const threat = boardState.threatenedCities[0];
+            const distToThreat = this.chebyshevDistance(warrior.row, warrior.col, threat.city.row, threat.city.col);
 
-            // Adjacent to target? Attack!
-            if (dist === 1 && player.relations[targetCity.ownerId] === 'war') {
-                return {
-                    type: AI_ACTION_TYPE.ATTACK,
-                    piece: warrior,
-                    targetRow: targetCity.row,
-                    targetCol: targetCity.col
-                };
+            // If close to threatened city, defend it
+            if (distToThreat <= 4) {
+                // Attack nearby enemy if at war
+                for (const enemy of threat.enemies) {
+                    if (player.relations[enemy.ownerId] === 'war') {
+                        const dist = this.chebyshevDistance(warrior.row, warrior.col, enemy.row, enemy.col);
+                        if (dist === 1) {
+                            return {
+                                type: AI_ACTION_TYPE.ATTACK,
+                                piece: warrior,
+                                targetRow: enemy.row,
+                                targetCol: enemy.col
+                            };
+                        }
+                    }
+                }
+
+                // Move toward threat
+                if (threat.enemies.length > 0) {
+                    const nearestEnemy = threat.enemies[0];
+                    return this.moveToward(warrior, nearestEnemy.row, nearestEnemy.col, boardState);
+                }
             }
-
-            // Move toward target
-            return this.moveToward(warrior, targetCity.row, targetCity.col, gameState);
         }
 
-        // No specific goal - default behavior
-        // Look for nearby enemies to attack
-        const nearbyEnemy = this.findNearbyEnemy(warrior, gameState, 1);
+        // Priority 2: Attack enemies if at war
+        const nearbyEnemy = this.findNearbyEnemy(warrior, boardState, 1);
         if (nearbyEnemy && player.relations[nearbyEnemy.ownerId] === 'war') {
             return {
                 type: AI_ACTION_TYPE.ATTACK,
                 piece: warrior,
                 targetRow: nearbyEnemy.row,
-                targetCol: nearbyEnemy.col,
-                target: nearbyEnemy
+                targetCol: nearbyEnemy.col
             };
         }
 
-        // Move toward enemy territory if militarizing
-        if (this.currentStrategy === AI_STRATEGY.MILITARIZATION && gameState.vulnerableEnemies.length > 0) {
-            const target = gameState.vulnerableEnemies[0].city;
-            return this.moveToward(warrior, target.row, target.col, gameState);
+        // Personality-driven behavior
+        if (this.personality === AI_PERSONALITY.MILITARISTIC) {
+            return this.militaristicWarriorMove(warrior, boardState);
+        } else {
+            return this.expansionistWarriorMove(warrior, boardState);
         }
+    }
 
-        // Move toward nearest own city for defense
-        const nearestCity = this.findNearestCity(warrior, gameState.ownPieces.cities);
-        if (nearestCity) {
-            const dist = AIUtils.chebyshevDistance(warrior.row, warrior.col, nearestCity.row, nearestCity.col);
-            if (dist > 2) {
-                return this.moveToward(warrior, nearestCity.row, nearestCity.col, gameState);
+    militaristicWarriorMove(warrior, boardState) {
+        const player = this.engine.players[this.playerId];
+
+        // If at war, move toward enemy cities
+        const atWar = Object.values(player.relations).some(r => r === 'war');
+
+        if (atWar && boardState.vulnerableCities.length > 0) {
+            // Find enemy city we're at war with
+            for (const target of boardState.vulnerableCities) {
+                if (player.relations[target.ownerId] === 'war') {
+                    return this.moveToward(warrior, target.city.row, target.city.col, boardState);
+                }
             }
         }
 
-        // Patrol/explore - move to unclaimed territory
-        return this.exploreMove(warrior, gameState);
+        // Not at war: position near potential targets
+        if (boardState.vulnerableCities.length > 0) {
+            const potentialTarget = boardState.vulnerableCities[0];
+            const dist = this.chebyshevDistance(warrior.row, warrior.col, potentialTarget.city.row, potentialTarget.city.col);
+
+            // Move closer but don't get too close (stay 2-3 tiles away until war)
+            if (dist > 3) {
+                return this.moveToward(warrior, potentialTarget.city.row, potentialTarget.city.col, boardState);
+            }
+        }
+
+        // Fallback: stay near own cities for defense
+        return this.moveTowardOwnCity(warrior, boardState);
     }
 
-    findNearbyEnemy(unit, gameState, maxDist) {
+    expansionistWarriorMove(warrior, boardState) {
         const player = this.engine.players[this.playerId];
 
-        for (const enemyId in gameState.enemyPieces) {
-            const enemy = gameState.enemyPieces[enemyId];
+        // If at war, defend and counterattack
+        const atWar = Object.values(player.relations).some(r => r === 'war');
 
-            // Check warriors
+        if (atWar && boardState.vulnerableCities.length > 0) {
+            for (const target of boardState.vulnerableCities) {
+                if (player.relations[target.ownerId] === 'war') {
+                    return this.moveToward(warrior, target.city.row, target.city.col, boardState);
+                }
+            }
+        }
+
+        // Escort settlers
+        for (const settler of boardState.ownPieces.settlers) {
+            const dist = this.chebyshevDistance(warrior.row, warrior.col, settler.row, settler.col);
+            if (dist <= 3) {
+                // Stay close to settler
+                if (dist > 1) {
+                    return this.moveToward(warrior, settler.row, settler.col, boardState);
+                }
+                // Move with settler toward expansion
+                if (boardState.expansionSpots.length > 0) {
+                    const target = boardState.expansionSpots[0];
+                    return this.moveToward(warrior, target.row, target.col, boardState);
+                }
+            }
+        }
+
+        // Default: patrol own territory and stay near cities
+        return this.moveTowardOwnCity(warrior, boardState);
+    }
+
+    moveTowardOwnCity(warrior, boardState) {
+        if (boardState.ownPieces.cities.length === 0) {
+            return this.randomMove(warrior);
+        }
+
+        // Find nearest own city
+        let nearestCity = null;
+        let minDist = Infinity;
+
+        for (const city of boardState.ownPieces.cities) {
+            const dist = this.chebyshevDistance(warrior.row, warrior.col, city.row, city.col);
+            if (dist < minDist) {
+                minDist = dist;
+                nearestCity = city;
+            }
+        }
+
+        // Stay within 3 tiles of city
+        if (nearestCity && minDist > 3) {
+            return this.moveToward(warrior, nearestCity.row, nearestCity.col, boardState);
+        }
+
+        // Already near city - patrol around
+        return this.patrolMove(warrior, boardState);
+    }
+
+    patrolMove(warrior, boardState) {
+        const moves = this.engine.getValidMoves(warrior);
+        if (moves.length === 0) return null;
+
+        // Filter to unoccupied squares
+        const validMoves = moves.filter(m => !this.engine.board[m.row][m.col]);
+        if (validMoves.length === 0) return null;
+
+        // Prefer unclaimed or own territory
+        let bestMove = null;
+        let bestScore = -Infinity;
+
+        for (const move of validMoves) {
+            let score = 0;
+            const owner = this.engine.tileOwnership[move.row][move.col];
+
+            if (owner === null) score += 3;
+            else if (owner === this.playerId) score += 1;
+            else score -= 1;
+
+            // Add some randomness
+            score += Math.random() * 2;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestMove = move;
+            }
+        }
+
+        if (bestMove) {
+            return {
+                type: AI_ACTION_TYPE.MOVE_UNIT,
+                piece: warrior,
+                targetRow: bestMove.row,
+                targetCol: bestMove.col
+            };
+        }
+
+        return null;
+    }
+
+    // ========================================
+    // MOVEMENT HELPERS
+    // ========================================
+
+    findNearbyEnemy(unit, boardState, maxDist) {
+        for (const enemyId in boardState.enemyPieces) {
+            const enemy = boardState.enemyPieces[enemyId];
+
             for (const w of enemy.warriors) {
-                const dist = AIUtils.chebyshevDistance(unit.row, unit.col, w.row, w.col);
+                const dist = this.chebyshevDistance(unit.row, unit.col, w.row, w.col);
                 if (dist <= maxDist) {
                     return { ...w, ownerId: parseInt(enemyId) };
                 }
             }
 
-            // Check settlers
             for (const s of enemy.settlers) {
-                const dist = AIUtils.chebyshevDistance(unit.row, unit.col, s.row, s.col);
+                const dist = this.chebyshevDistance(unit.row, unit.col, s.row, s.col);
                 if (dist <= maxDist) {
                     return { ...s, ownerId: parseInt(enemyId) };
                 }
             }
 
-            // Check cities
             for (const c of enemy.cities) {
-                const dist = AIUtils.chebyshevDistance(unit.row, unit.col, c.row, c.col);
+                const dist = this.chebyshevDistance(unit.row, unit.col, c.row, c.col);
                 if (dist <= maxDist) {
                     return { ...c, ownerId: parseInt(enemyId) };
                 }
@@ -1052,42 +790,37 @@ class AIController {
         return null;
     }
 
-    moveToward(unit, targetRow, targetCol, gameState) {
+    moveToward(unit, targetRow, targetCol, boardState) {
         const moves = this.engine.getValidMoves(unit);
         if (moves.length === 0) return null;
 
-        // Find move that gets us closest to target
+        const currentDist = this.chebyshevDistance(unit.row, unit.col, targetRow, targetCol);
         let bestMove = null;
-        let bestDist = AIUtils.chebyshevDistance(unit.row, unit.col, targetRow, targetCol);
+        let bestDist = currentDist;
 
         for (const move of moves) {
-            // Skip if occupied by friendly unit
             const occupant = this.engine.board[move.row][move.col];
+
+            // Skip friendly units
             if (occupant && occupant.ownerId === this.playerId) continue;
 
-            const dist = AIUtils.chebyshevDistance(move.row, move.col, targetRow, targetCol);
-            const threat = gameState.threatHeatmap[move.row][move.col];
+            const dist = this.chebyshevDistance(move.row, move.col, targetRow, targetCol);
 
-            // Prefer moves that get closer, penalize dangerous squares
-            const score = (bestDist - dist) * 10 - threat * 5;
-
-            if (dist < bestDist || (dist === bestDist && score > 0)) {
-                // Check if this would be an attack
-                if (occupant && occupant.ownerId !== this.playerId) {
-                    const player = this.engine.players[this.playerId];
-                    if (player.relations[occupant.ownerId] === 'war') {
-                        // Attack is good!
-                        return {
-                            type: AI_ACTION_TYPE.ATTACK,
-                            piece: unit,
-                            targetRow: move.row,
-                            targetCol: move.col,
-                            target: occupant
-                        };
-                    }
-                    continue; // Can't attack if not at war
+            // Check if this is an attack opportunity
+            if (occupant && occupant.ownerId !== this.playerId) {
+                const player = this.engine.players[this.playerId];
+                if (player.relations[occupant.ownerId] === 'war') {
+                    return {
+                        type: AI_ACTION_TYPE.ATTACK,
+                        piece: unit,
+                        targetRow: move.row,
+                        targetCol: move.col
+                    };
                 }
+                continue; // Can't move through enemy if not at war
+            }
 
+            if (dist < bestDist) {
                 bestDist = dist;
                 bestMove = move;
             }
@@ -1105,20 +838,27 @@ class AIController {
         return null;
     }
 
-    moveToSafety(unit, gameState) {
+    moveToSafety(unit, boardState) {
         const moves = this.engine.getValidMoves(unit);
         if (moves.length === 0) return null;
 
         let safestMove = null;
-        let lowestThreat = gameState.threatHeatmap[unit.row][unit.col];
+        let maxDist = 0;
 
+        // Find move that maximizes distance from enemies
         for (const move of moves) {
-            const occupant = this.engine.board[move.row][move.col];
-            if (occupant) continue;
+            if (this.engine.board[move.row][move.col]) continue;
 
-            const threat = gameState.threatHeatmap[move.row][move.col];
-            if (threat < lowestThreat) {
-                lowestThreat = threat;
+            let minEnemyDist = Infinity;
+            for (const enemyId in boardState.enemyPieces) {
+                for (const warrior of boardState.enemyPieces[enemyId].warriors) {
+                    const dist = this.chebyshevDistance(move.row, move.col, warrior.row, warrior.col);
+                    minEnemyDist = Math.min(minEnemyDist, dist);
+                }
+            }
+
+            if (minEnemyDist > maxDist) {
+                maxDist = minEnemyDist;
                 safestMove = move;
             }
         }
@@ -1135,213 +875,20 @@ class AIController {
         return null;
     }
 
-    moveToDefensivePosition(warrior, city, gameState) {
-        const moves = this.engine.getValidMoves(warrior);
+    randomMove(unit) {
+        const moves = this.engine.getValidMoves(unit);
         if (moves.length === 0) return null;
 
-        let bestMove = null;
-        let bestScore = -Infinity;
+        const validMoves = moves.filter(m => !this.engine.board[m.row][m.col]);
+        if (validMoves.length === 0) return null;
 
-        for (const move of moves) {
-            const occupant = this.engine.board[move.row][move.col];
-            if (occupant) continue;
-
-            const distToCity = AIUtils.chebyshevDistance(move.row, move.col, city.row, city.col);
-            if (distToCity > 2) continue; // Stay close
-
-            // Score: low threat, covers city approaches
-            let score = 10 - gameState.threatHeatmap[move.row][move.col] * 5;
-            score += (2 - distToCity) * 3; // Closer is better
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestMove = move;
-            }
-        }
-
-        if (bestMove) {
-            return {
-                type: AI_ACTION_TYPE.MOVE_UNIT,
-                piece: warrior,
-                targetRow: bestMove.row,
-                targetCol: bestMove.col
-            };
-        }
-
-        return null;
-    }
-
-    exploreMove(warrior, gameState) {
-        const moves = this.engine.getValidMoves(warrior);
-        if (moves.length === 0) return null;
-
-        let bestMove = null;
-        let bestScore = -Infinity;
-
-        for (const move of moves) {
-            const occupant = this.engine.board[move.row][move.col];
-            if (occupant) continue;
-
-            let score = 0;
-
-            // Prefer unclaimed territory
-            const owner = this.engine.tileOwnership[move.row][move.col];
-            if (owner === null) score += 5;
-            else if (owner !== this.playerId) score += 3;
-
-            // Avoid high threat areas
-            score -= gameState.threatHeatmap[move.row][move.col] * 5;
-
-            // Prefer unexplored areas (far from own cities)
-            let minDistToOwnCity = Infinity;
-            for (const city of gameState.ownPieces.cities) {
-                const dist = AIUtils.chebyshevDistance(move.row, move.col, city.row, city.col);
-                minDistToOwnCity = Math.min(minDistToOwnCity, dist);
-            }
-            if (minDistToOwnCity > 3) score += 2;
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestMove = move;
-            }
-        }
-
-        if (bestMove) {
-            return {
-                type: AI_ACTION_TYPE.MOVE_UNIT,
-                piece: warrior,
-                targetRow: bestMove.row,
-                targetCol: bestMove.col
-            };
-        }
-
-        return null;
-    }
-
-    // ========================================
-    // DIPLOMACY
-    // ========================================
-
-    handleDiplomacy(gameState) {
-        const actions = [];
-        const player = this.engine.players[this.playerId];
-
-        // Check for pending peace proposals
-        for (let otherId = 0; otherId < this.engine.players.length; otherId++) {
-            if (otherId === this.playerId) continue;
-            const otherPlayer = this.engine.players[otherId];
-            if (!otherPlayer) continue;
-
-            if (otherPlayer.relations[this.playerId] === 'peace_proposed') {
-                if (this.shouldAcceptPeace(otherId, gameState)) {
-                    this.engine.acceptPeace(this.playerId, otherId);
-                    actions.push({ type: AI_ACTION_TYPE.ACCEPT_PEACE, target: otherId });
-                    console.log(`[AI] Player ${this.playerId} accepted peace from ${otherId}`);
-                }
-            }
-        }
-
-        // Consider declaring war
-        if (this.currentStrategy === AI_STRATEGY.MILITARIZATION &&
-            gameState.armyStrength.warriors >= this.config.armySizeForAttack) {
-
-            for (const target of gameState.vulnerableEnemies) {
-                if (player.relations[target.ownerId] === 'peace') {
-                    if (this.shouldDeclareWar(target.ownerId, gameState)) {
-                        this.engine.declareWar(this.playerId, target.ownerId);
-                        actions.push({ type: AI_ACTION_TYPE.DECLARE_WAR, target: target.ownerId });
-                        console.log(`[AI] Player ${this.playerId} declared war on ${target.ownerId}`);
-                        break; // One war at a time
-                    }
-                }
-            }
-        }
-
-        // Consider proposing peace if losing
-        for (let otherId = 0; otherId < this.engine.players.length; otherId++) {
-            if (otherId === this.playerId) continue;
-            if (player.relations[otherId] !== 'war') continue;
-
-            if (this.shouldProposePeace(otherId, gameState)) {
-                this.engine.proposePeace(this.playerId, otherId);
-                actions.push({ type: AI_ACTION_TYPE.PROPOSE_PEACE, target: otherId });
-                console.log(`[AI] Player ${this.playerId} proposed peace to ${otherId}`);
-            }
-        }
-
-        return actions;
-    }
-
-    shouldDeclareWar(targetId, gameState) {
-        const rel = gameState.relativePower[targetId];
-        if (!rel) return false;
-
-        let score = 0;
-
-        // Strong advantage
-        if (rel.advantage === 'strong') score += 0.5;
-        else if (rel.advantage === 'even') score += 0.1;
-        else score -= 0.4;
-
-        // Have enough army
-        if (gameState.armyStrength.warriors >= this.config.armySizeForAttack) {
-            score += 0.3;
-        }
-
-        // Vulnerable target exists
-        const vulnTarget = gameState.vulnerableEnemies.find(v => v.ownerId === targetId);
-        if (vulnTarget && vulnTarget.vulnerability > 50) {
-            score += 0.2;
-        }
-
-        // Not already at war with others
-        let otherWars = 0;
-        for (const otherId in this.engine.players[this.playerId].relations) {
-            if (this.engine.players[this.playerId].relations[otherId] === 'war') otherWars++;
-        }
-        score -= otherWars * 0.3;
-
-        return score > this.config.warThreshold;
-    }
-
-    shouldAcceptPeace(proposerId, gameState) {
-        const rel = gameState.relativePower[proposerId];
-
-        let score = 0.5; // Neutral start
-
-        // Weaker = accept
-        if (rel?.advantage === 'weak') score += 0.3;
-        else if (rel?.advantage === 'strong') score -= 0.2;
-
-        // Cities threatened = accept
-        const threats = gameState.cityThreats.filter(t => t.level > 0.3).length;
-        score += threats * 0.15;
-
-        // Multiple wars = accept
-        let warCount = 0;
-        for (const otherId in this.engine.players[this.playerId].relations) {
-            if (this.engine.players[this.playerId].relations[otherId] === 'war') warCount++;
-        }
-        if (warCount > 1) score += 0.2;
-
-        return score > this.config.peaceThreshold;
-    }
-
-    shouldProposePeace(targetId, gameState) {
-        const rel = gameState.relativePower[targetId];
-
-        let score = 0;
-
-        // Weaker = propose
-        if (rel?.advantage === 'weak') score += 0.4;
-
-        // Losing cities
-        if (gameState.ownPieces.cities.length === 1) score += 0.3;
-
-        // Army depleted
-        if (gameState.armyStrength.warriors < 2) score += 0.2;
-
-        return score > this.config.peaceThreshold;
+        const move = validMoves[Math.floor(Math.random() * validMoves.length)];
+        return {
+            type: AI_ACTION_TYPE.MOVE_UNIT,
+            piece: unit,
+            targetRow: move.row,
+            targetCol: move.col
+        };
     }
 
     // ========================================
@@ -1353,8 +900,6 @@ class AIController {
 
         switch (action.type) {
             case AI_ACTION_TYPE.MOVE_UNIT:
-                return this.engine.movePiece(action.piece, action.targetRow, action.targetCol);
-
             case AI_ACTION_TYPE.ATTACK:
                 return this.engine.movePiece(action.piece, action.targetRow, action.targetCol);
 
@@ -1379,56 +924,11 @@ class AIController {
     }
 
     // ========================================
-    // EVENT HANDLING
+    // UTILITY
     // ========================================
 
-    respondToEvent(event) {
-        if (Math.random() > this.config.threatAwareness) return;
-
-        switch (event.type) {
-            case 'WAR_DECLARED':
-                if (event.details.defender === this.playerId) {
-                    this.currentStrategy = AI_STRATEGY.DEFENSIVE;
-                    this.strategyTurnsRemaining = 5;
-                }
-                break;
-
-            case 'PEACE_PROPOSED':
-                if (event.details.target === this.playerId) {
-                    this.pendingPeaceProposals.push(event.details.proposer);
-                }
-                break;
-
-            case 'CITY_CAPTURED':
-                if (event.details.previousOwner === this.playerId) {
-                    this.currentStrategy = AI_STRATEGY.MILITARIZATION;
-                    this.strategyTurnsRemaining = 5;
-                }
-                break;
-        }
-    }
-}
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-class AIUtils {
-    static manhattanDistance(r1, c1, r2, c2) {
-        return Math.abs(r1 - r2) + Math.abs(c1 - c2);
-    }
-
-    static chebyshevDistance(r1, c1, r2, c2) {
+    chebyshevDistance(r1, c1, r2, c2) {
         return Math.max(Math.abs(r1 - r2), Math.abs(c1 - c2));
-    }
-
-    static shuffleArray(array) {
-        const result = [...array];
-        for (let i = result.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [result[i], result[j]] = [result[j], result[i]];
-        }
-        return result;
     }
 }
 
@@ -1444,7 +944,7 @@ class AIManager {
 
     registerAIPlayer(playerId, difficulty = AI_DIFFICULTY.MEDIUM) {
         this.controllers[playerId] = new AIController(this.engine, playerId, difficulty);
-        console.log(`[AIManager] Registered AI for player ${playerId} (${difficulty})`);
+        console.log(`[AIManager] Registered AI for player ${playerId} (${difficulty}, ${this.controllers[playerId].personality})`);
     }
 
     isAIPlayer(playerId) {
@@ -1465,9 +965,7 @@ class AIManager {
     }
 
     notifyEvent(event) {
-        for (const playerId in this.controllers) {
-            this.controllers[playerId].respondToEvent(event);
-        }
+        // No longer need complex event handling - AI reevaluates each turn
     }
 
     static getAIDifficulties() {

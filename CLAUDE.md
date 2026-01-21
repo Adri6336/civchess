@@ -45,6 +45,13 @@ All game actions flow through the engine which validates rules and logs actions.
 - Players must declare war before attacking; peace is default
 - First player to own all cities wins
 
-### AI Placeholder
+### AI System
 
-`GameEngine.getAIMove()` and `executeAITurn()` are stubbed but not implemented. All players are currently human-controlled.
+**AI (`js/AI.js`)** - Personality-driven AI with two types:
+- **Militaristic**: Builds armies, researches tech, declares war when ready, focuses on conquest
+- **Expansionist**: Maintains army parity with enemies, prioritizes settlers and new cities, limits territory growth
+
+Personalities are randomly assigned at game start. The AI:
+- Reevaluates production whenever a project completes (no paralysis)
+- Makes decisions based on board state analysis each turn
+- Difficulty levels (Easy/Medium/Hard) control mistake chance
